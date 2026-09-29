@@ -1,4 +1,7 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+// In dev the API runs separately on port 8000. In production the web server forwards
+// <site>/quiz-app/api/ to the backend, so the API lives next to the app.
+export const API_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.PROD ? `${window.location.origin}${import.meta.env.BASE_URL}api` : 'http://127.0.0.1:8000');
 export const WS_URL = API_URL.replace(/^http/, 'ws');
 
 const TOKEN_KEY = 'kahoot_token';
@@ -36,7 +39,7 @@ export async function apiFetch(path, options = {}) {
 
   if (res.status === 401 && token) {
     clearToken();
-    window.location.assign('/');
+    window.location.assign(import.meta.env.BASE_URL);
   }
   if (!res.ok) {
     const detail = typeof data?.detail === 'string' ? data.detail : `Request failed (${res.status})`;
