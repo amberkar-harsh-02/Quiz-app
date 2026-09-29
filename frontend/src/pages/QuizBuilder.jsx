@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch, readToken } from '../api';
 import { ANSWERS } from '../answers';
 import AnswerShape from '../components/AnswerShape';
+import { Alert, Button, Field, Panel, Wordmark, inputClass } from '../components/ui';
 
 const QUESTION_FIELDS = ['text', 'option_red', 'option_blue', 'option_yellow', 'option_green', 'correct_option', 'time_limit_seconds', 'explanation'];
 
@@ -86,135 +87,134 @@ export default function QuizBuilder() {
   };
 
   if (isLoading) {
-    return <div className="flex h-screen items-center justify-center text-2xl font-bold text-gray-500">Loading quiz...</div>;
+    return <div className="flex h-screen items-center justify-center text-xl text-muted">Loading quiz...</div>;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 pb-32">
-      <div className="mx-auto max-w-4xl">
-
-        {/* Header Section */}
-        <div className="mb-8 flex items-center justify-between border-b border-gray-200 pb-6">
-          <h1 className="text-4xl font-black text-gray-800">{quizId ? 'Edit Quiz' : 'Quiz Builder'}</h1>
-          <button onClick={() => navigate('/host')} className="rounded-lg border-2 border-gray-300 px-6 py-2 font-bold text-gray-700 hover:bg-gray-100">
-            Cancel
-          </button>
+    <div className="min-h-screen pb-28">
+      <header className="border-b border-line bg-white">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-3">
+          <Wordmark title="Quiz App" />
+          <Button variant="secondary" size="sm" onClick={() => navigate('/host')}>Cancel</Button>
         </div>
+      </header>
+
+      <main className="mx-auto max-w-4xl px-6 py-8">
+        <h1 className="mb-6 text-3xl font-bold tracking-tight">{quizId ? 'Edit Quiz' : 'Quiz Builder'}</h1>
 
         {error && (
-          <div role="alert" className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-red-50 p-4 font-bold text-red-700">
-            <span>{error}</span>
-            {offerCopy && (
-              <button onClick={() => saveQuiz(true)} disabled={isSaving} className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50">
-                Save as a new quiz
-              </button>
-            )}
+          <div className="mb-6">
+            <Alert
+              action={offerCopy && (
+                <Button variant="danger" size="sm" onClick={() => saveQuiz(true)} disabled={isSaving}>Save as a new quiz</Button>
+              )}
+            >
+              {error}
+            </Alert>
           </div>
         )}
 
-        {/* Title Input */}
-        <div className="mb-10 rounded-2xl bg-white p-8 shadow-sm border border-gray-100">
-          <label htmlFor="quiz-title" className="mb-2 block text-sm font-bold text-gray-400 uppercase tracking-wider">Quiz Title</label>
+        <Field label="Quiz Title" id="quiz-title" className="mb-8">
           <input
             id="quiz-title"
             type="text"
             placeholder="e.g. CST 315 Midterm Review"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-xl border-2 border-gray-200 p-4 text-3xl font-bold focus:border-blue-500 focus:outline-none"
+            className={`${inputClass} text-2xl font-bold`}
           />
-        </div>
+        </Field>
 
-        {/* Questions List */}
-        <div className="space-y-12">
+        <ol className="space-y-6">
           {questions.map((q, idx) => (
-            <div key={q.key} className="relative rounded-2xl bg-white p-8 shadow-sm border border-gray-100">
-
-              <div className="mb-6 flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-800">Question {idx + 1}</h2>
+            <Panel as="li" key={q.key} className="p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold">Question {idx + 1}</h2>
                 {questions.length > 1 && (
-                  <button onClick={() => removeQuestion(idx)} className="text-red-500 hover:underline font-bold">
+                  <Button variant="ghost" size="sm" onClick={() => removeQuestion(idx)} className="hover:!bg-bad-soft hover:!text-bad">
                     Remove Question
-                  </button>
+                  </Button>
                 )}
               </div>
 
-              {/* Question Text */}
               <input
                 type="text"
                 aria-label={`Question ${idx + 1} text`}
                 placeholder="Type your question here..."
                 value={q.text}
                 onChange={(e) => updateQuestion(idx, 'text', e.target.value)}
-                className="mb-8 w-full rounded-xl border-2 border-gray-200 p-4 text-xl font-semibold focus:border-blue-500 focus:outline-none"
+                className={`${inputClass} mb-5 text-lg font-bold`}
               />
 
-              {/* Grid for Options */}
-              <div className="grid grid-cols-1 gap-4 mb-3 sm:grid-cols-2">
-                {ANSWERS.map(({ color, bg }) => (
-                  <label key={color} className={`flex items-center gap-3 rounded-xl border-2 bg-white p-2 pl-4 ${q.correct_option === color ? 'border-gray-900' : 'border-gray-200'}`}>
-                    <span style={{ color: bg }}><AnswerShape color={color} className="h-6 w-6" /></span>
-                    <input
-                      type="text"
-                      placeholder={`${color.charAt(0).toUpperCase() + color.slice(1)} answer`}
-                      value={q[`option_${color}`]}
-                      onChange={(e) => updateQuestion(idx, `option_${color}`, e.target.value)}
-                      className="w-full bg-transparent p-2 text-lg font-bold text-gray-900 placeholder-gray-400 focus:outline-none"
-                    />
-                    {/* Radio Button to select Correct Answer */}
-                    <input
-                      type="radio"
-                      name={`correct_${q.key}`}
-                      aria-label={`${color} is correct`}
-                      checked={q.correct_option === color}
-                      onChange={() => updateQuestion(idx, 'correct_option', color)}
-                      className="mr-2 h-5 w-5 shrink-0 cursor-pointer accent-gray-900"
-                    />
-                  </label>
-                ))}
-              </div>
-              <p className="mb-6 text-sm font-bold text-gray-500">
-                Select the radio button next to the correct answer.
-              </p>
+              <fieldset className="mb-5">
+                <legend className="mb-2 text-sm text-muted">Answers. Pick the correct one with the radio button.</legend>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {ANSWERS.map(({ color, bg }) => {
+                    const isCorrect = q.correct_option === color;
+                    return (
+                      <label
+                        key={color}
+                        className={`flex items-center gap-3 rounded-chip border bg-white py-1 pl-3 pr-3 transition-colors ${isCorrect ? 'border-ok bg-ok-soft' : 'border-line hover:border-muted'}`}
+                      >
+                        <span style={{ color: bg }}><AnswerShape color={color} className="h-5 w-5" /></span>
+                        <input
+                          type="text"
+                          placeholder={`${color.charAt(0).toUpperCase() + color.slice(1)} answer`}
+                          value={q[`option_${color}`]}
+                          onChange={(e) => updateQuestion(idx, `option_${color}`, e.target.value)}
+                          className="w-full rounded-chip bg-transparent px-1 py-2 font-bold placeholder:font-normal placeholder:text-muted/70 focus-visible:ring-offset-0"
+                        />
+                        <input
+                          type="radio"
+                          name={`correct_${q.key}`}
+                          aria-label={`${color} is correct`}
+                          checked={isCorrect}
+                          onChange={() => updateQuestion(idx, 'correct_option', color)}
+                          className="h-5 w-5 shrink-0 cursor-pointer accent-[#1E7A3E]"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
 
-              {/* Explanation shown to students when they review the quiz */}
-              <label className="mb-6 block">
-                <span className="mb-2 block font-bold text-gray-600">Explanation <span className="font-semibold text-gray-400">(optional, shown after the question and in student review)</span></span>
+              <Field label="Explanation" hint="(optional, shown after the question and in student review)" id={`explanation_${q.key}`} className="mb-5">
                 <textarea
+                  id={`explanation_${q.key}`}
                   rows={2}
                   value={q.explanation}
                   onChange={(e) => updateQuestion(idx, 'explanation', e.target.value)}
-                  className="w-full rounded-xl border-2 border-gray-200 p-3 font-semibold focus:border-blue-500 focus:outline-none"
+                  className={inputClass}
                 />
-              </label>
+              </Field>
 
-              {/* Timer Setting */}
-              <div className="flex items-center space-x-4 border-t border-gray-100 pt-6">
-                <label htmlFor={`time_${q.key}`} className="font-bold text-gray-600">Time Limit (Seconds):</label>
+              <div className="flex items-center gap-3 border-t border-line pt-4">
+                <label htmlFor={`time_${q.key}`} className="text-sm font-bold">Time limit</label>
                 <select
                   id={`time_${q.key}`}
                   value={q.time_limit_seconds}
                   onChange={(e) => updateQuestion(idx, 'time_limit_seconds', parseInt(e.target.value))}
-                  className="rounded-lg border-2 border-gray-200 p-2 font-bold focus:outline-none"
+                  className="rounded-chip border border-line bg-white px-3 py-1.5 font-bold hover:border-muted"
                 >
-                  {[10, 15, 20, 30, 60, 90, 120].map((s) => <option key={s} value={s}>{s}</option>)}
+                  {[10, 15, 20, 30, 60, 90, 120].map((s) => <option key={s} value={s}>{s} seconds</option>)}
                 </select>
               </div>
-
-            </div>
+            </Panel>
           ))}
-        </div>
+        </ol>
+      </main>
 
-        {/* Floating Action Bar */}
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center space-x-6 bg-white border-t border-gray-200 p-6 shadow-2xl">
-          <button onClick={addQuestion} className="rounded-xl bg-gray-200 px-8 py-4 text-xl font-bold text-gray-800 hover:bg-gray-300">
-            + Add Another Question
-          </button>
-          <button onClick={() => saveQuiz()} disabled={isSaving} className="rounded-xl bg-blue-600 px-12 py-4 text-xl font-bold text-white shadow-lg hover:bg-blue-700 disabled:opacity-50">
-            {isSaving ? 'Saving...' : quizId ? 'Save Changes' : 'Save & Publish Quiz'}
-          </button>
+      {/* Sticky action bar */}
+      <div className="fixed inset-x-0 bottom-0 border-t border-line bg-white/95 shadow-[0_-8px_24px_rgba(23,32,51,0.08)] backdrop-blur">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-4">
+          <span className="text-sm text-muted">{questions.length} {questions.length === 1 ? 'question' : 'questions'}</span>
+          <div className="flex gap-3">
+            <Button variant="secondary" onClick={addQuestion}>+ Add Another Question</Button>
+            <Button onClick={() => saveQuiz()} disabled={isSaving}>
+              {isSaving ? 'Saving...' : quizId ? 'Save Changes' : 'Save & Publish Quiz'}
+            </Button>
+          </div>
         </div>
-
       </div>
     </div>
   );

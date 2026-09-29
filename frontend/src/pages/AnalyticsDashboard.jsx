@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch, readToken } from '../api';
-import { ANSWERS } from '../answers';
-import AnswerShape from '../components/AnswerShape';
+import { Alert, Button, Panel, Wordmark } from '../components/ui';
+import SpreadBars from '../components/host/SpreadBars';
 
 export default function AnalyticsDashboard() {
   const [sessions, setSessions] = useState([]);
@@ -33,137 +33,134 @@ export default function AnalyticsDashboard() {
   };
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center text-2xl font-bold text-gray-500">Loading Analytics...</div>;
+    return <div className="flex h-screen items-center justify-center text-xl text-muted">Loading Analytics...</div>;
   }
 
+  const accuracyTone = (accuracy) => (accuracy >= 70 ? 'text-ok' : accuracy >= 40 ? 'text-warn' : 'text-bad');
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-6xl">
-        
-        {/* Navigation Header */}
-        <div className="mb-8 flex items-center justify-between border-b border-gray-200 pb-6">
-          <div className="flex items-center space-x-6">
-            <h1 className="text-4xl font-black text-gray-800">Analytics</h1>
-            {selectedSession && (
-              <button onClick={() => setSelectedSession(null)} className="rounded-lg bg-gray-200 px-4 py-2 font-bold text-gray-700 hover:bg-gray-300">
-                &larr; Back to Archive
-              </button>
-            )}
-          </div>
-          <button onClick={() => navigate('/host')} className="rounded-lg border-2 border-gray-300 px-6 py-2 font-bold text-gray-700 hover:bg-gray-100">
-            Exit to Dashboard
-          </button>
+    <div className="min-h-screen">
+      <header className="border-b border-line bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
+          <Wordmark title="Quiz App" />
+          <Button variant="secondary" size="sm" onClick={() => navigate('/host')}>Exit to Dashboard</Button>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          {selectedSession && (
+            <Button variant="ghost" size="sm" onClick={() => setSelectedSession(null)}>&larr; Back to Archive</Button>
+          )}
+          <h1 className="text-3xl font-bold tracking-tight">{selectedSession ? selectedSession.quiz_title : 'Analytics'}</h1>
         </div>
 
-        {error && <div role="alert" className="mb-8 rounded-xl bg-red-50 p-4 font-bold text-red-700">{error}</div>}
+        {error && <div className="mb-6"><Alert>{error}</Alert></div>}
 
         {/* VIEW 1: Session Archive (Master List) */}
         {!selectedSession && (
-          <div>
-            <h2 className="mb-6 text-2xl font-bold text-gray-700">Past Game Sessions</h2>
+          <section>
+            <h2 className="mb-4 text-xl font-bold">Past Game Sessions</h2>
             {sessions.length === 0 ? (
-              <div className="rounded-2xl bg-white p-12 text-center text-xl text-gray-500 shadow-sm">
-                No past game sessions found. Host a game to generate data!
-              </div>
+              <Panel className="p-10 text-center text-muted">
+                No sessions yet. Results appear here after you host a game and it ends.
+              </Panel>
             ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {sessions.map((session) => (
-                  <button key={session.id} onClick={() => viewSession(session.id)} className="rounded-2xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                    <div className="mb-2 text-sm font-bold tracking-wider text-blue-500 uppercase">Room: {session.room_code}</div>
-                    <h3 className="mb-4 text-2xl font-bold text-gray-800 truncate">{session.quiz_title}</h3>
-                    <div className="text-gray-500">{session.player_count} Students Participated</div>
-                  </button>
-                ))}
-              </div>
+              <Panel className="overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="border-b border-line bg-paper text-sm text-muted">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 font-bold">Quiz</th>
+                      <th scope="col" className="px-5 py-3 font-bold">Room</th>
+                      <th scope="col" className="px-5 py-3 text-right font-bold">Students</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {sessions.map((session) => (
+                      <tr key={session.id} className="transition-colors hover:bg-paper">
+                        <td className="px-5 py-3">
+                          <button onClick={() => viewSession(session.id)} className="rounded-chip text-left font-bold text-brand hover:underline">
+                            {session.quiz_title}
+                          </button>
+                        </td>
+                        <td className="px-5 py-3 font-mono text-muted">{session.room_code}</td>
+                        <td className="px-5 py-3 text-right font-mono">{session.player_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Panel>
             )}
-          </div>
+          </section>
         )}
 
         {/* VIEW 2: Detailed Session Report */}
         {selectedSession && (
           <div className="space-y-8">
-            
-            {/* Health Check (Overview Cards) */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Students</div>
-                <div className="mt-2 text-4xl font-black text-gray-800">{selectedSession.overview.total_students}</div>
+            <dl className="grid grid-cols-3 divide-x divide-line rounded-panel border border-line bg-white">
+              <div className="px-6 py-4">
+                <dt className="text-sm text-muted">Students</dt>
+                <dd className="font-mono text-3xl font-extrabold">{selectedSession.overview.total_students}</dd>
               </div>
-              <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">Class Average Score</div>
-                <div className="mt-2 text-4xl font-black text-blue-600">{selectedSession.overview.average_score}</div>
+              <div className="px-6 py-4">
+                <dt className="text-sm text-muted">Average score</dt>
+                <dd className="font-mono text-3xl font-extrabold">{selectedSession.overview.average_score}</dd>
               </div>
-              <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">Class Accuracy</div>
-                <div className={`mt-2 text-4xl font-black ${selectedSession.overview.average_accuracy > 70 ? 'text-green-500' : 'text-red-500'}`}>
+              <div className="px-6 py-4">
+                <dt className="text-sm text-muted">Class accuracy</dt>
+                <dd className={`font-mono text-3xl font-extrabold ${accuracyTone(selectedSession.overview.average_accuracy)}`}>
                   {selectedSession.overview.average_accuracy}%
-                </div>
+                </dd>
               </div>
-            </div>
+            </dl>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               {/* Question Breakdown (Identify struggle areas) */}
-              <div className="lg:col-span-2 space-y-6">
-                <h2 className="text-2xl font-bold text-gray-800">Question Performance</h2>
-                {selectedSession.questions.map((q, idx) => (
-                  <div key={q.question_id} className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100">
-                    <div className="mb-4 flex items-start justify-between">
-                      <h3 className="text-xl font-bold text-gray-800"><span className="text-gray-400 mr-2">{idx + 1}.</span> {q.text}</h3>
-                      <span className={`rounded-full px-4 py-1 text-sm font-bold ${q.accuracy > 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {q.accuracy}% Correct
-                      </span>
-                    </div>
-                    
-                    {/* Visual Progress Bar */}
-                    <div className="mb-4 h-3 w-full rounded-full bg-gray-200 overflow-hidden">
-                      <div className="h-full bg-green-500" style={{ width: `${q.accuracy}%` }}></div>
-                    </div>
-
-                    {/* Answer Spread */}
-                    <div className="flex space-x-2">
-                      {ANSWERS.map(({ color, bg }) => (
-                        <div key={color} className="flex flex-1 items-center justify-center gap-2 rounded bg-gray-100 p-2 text-sm font-bold text-gray-700">
-                          <span style={{ color: bg }}><AnswerShape color={color} className="h-4 w-4" /></span>
-                          {q.spread[color]}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <section className="lg:col-span-2">
+                <h2 className="mb-4 text-xl font-bold">Question Performance</h2>
+                <Panel as="ol" className="divide-y divide-line">
+                  {selectedSession.questions.map((q, idx) => (
+                    <li key={q.question_id} className="p-5">
+                      <div className="mb-3 flex items-start justify-between gap-4">
+                        <h3 className="font-bold"><span className="mr-2 font-mono text-muted">{idx + 1}.</span>{q.text}</h3>
+                        <span className={`shrink-0 font-bold ${accuracyTone(q.accuracy)}`}>{q.accuracy}% correct</span>
+                      </div>
+                      <SpreadBars spread={q.spread} />
+                    </li>
+                  ))}
+                </Panel>
+              </section>
 
               {/* Student Roster */}
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-gray-800">Student Roster</h2>
-                <div className="rounded-2xl bg-white shadow-sm border border-gray-100 overflow-hidden">
+              <section>
+                <h2 className="mb-4 text-xl font-bold">Student Roster</h2>
+                <Panel className="overflow-hidden">
                   <div className="max-h-[600px] overflow-y-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-gray-50 sticky top-0">
+                      <thead className="sticky top-0 border-b border-line bg-paper text-sm text-muted">
                         <tr>
-                          <th className="p-4 font-bold text-gray-600">Name</th>
-                          <th className="p-4 font-bold text-gray-600">Score</th>
-                          <th className="p-4 font-bold text-gray-600">Acc</th>
+                          <th scope="col" className="px-4 py-3 font-bold">Name</th>
+                          <th scope="col" className="px-4 py-3 text-right font-bold">Score</th>
+                          <th scope="col" className="px-4 py-3 text-right font-bold">Accuracy</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-line">
                         {selectedSession.students.map((s, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="p-4 font-bold text-gray-800">{s.name}</td>
-                            <td className="p-4 font-semibold text-blue-600">{s.final_score}</td>
-                            <td className="p-4 font-semibold text-gray-600">{s.accuracy}%</td>
+                          <tr key={idx}>
+                            <td className="px-4 py-3 font-bold">{s.name}</td>
+                            <td className="px-4 py-3 text-right font-mono">{s.final_score}</td>
+                            <td className={`px-4 py-3 text-right font-mono font-bold ${accuracyTone(s.accuracy)}`}>{s.accuracy}%</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </div>
-
+                </Panel>
+              </section>
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
