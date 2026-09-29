@@ -3,7 +3,8 @@
 export const ANSWERS = [
   { color: 'red', shape: 'triangle', bg: '#e21b3c', text: '#ffffff' },
   { color: 'blue', shape: 'diamond', bg: '#1368ce', text: '#ffffff' },
-  { color: 'yellow', shape: 'circle', bg: '#d89e00', text: '#ffffff' },
+  // White on this yellow is under 3:1 contrast, so it takes dark text
+  { color: 'yellow', shape: 'circle', bg: '#d89e00', text: '#172033' },
   { color: 'green', shape: 'square', bg: '#26890c', text: '#ffffff' },
 ];
 

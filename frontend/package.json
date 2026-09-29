@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
     "@react-oauth/google": "^0.13.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

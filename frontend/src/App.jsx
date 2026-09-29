@@ -7,7 +7,7 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-100 font-sans">
+      <div className="min-h-screen">
         <Routes>
           {/* Default route is the student join screen */}
           <Route path="/" element={<StudentView />} />

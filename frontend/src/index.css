@@ -1,12 +1,25 @@
+@import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-500.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-800.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Override Vite's default layout constraints */
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-  background-color: #f9fafb; /* Tailwind's bg-gray-50 */
+@layer base {
+  html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+  }
+
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-paper;
+  }
 }
