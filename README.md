@@ -3,7 +3,7 @@
 A Kahoot-style live quiz for CST 315 (Introduction to Cybersecurity). The backend is FastAPI with WebSockets and SQLite; the frontend is React + Vite + Tailwind.
 
 - **Host** (professor/TA): builds or uploads quizzes, runs a live game on the projector, reviews per-session analytics.
-- **Students**: join from a phone or laptop with a room PIN, as a guest or signed in with a `@csumb.edu` account. Signed-in students can review past quizzes with explanations.
+- **Students**: join from their own browser tab with a room PIN, as a guest or signed in with a `@csumb.edu` account. Signed-in students can review past quizzes with explanations.
 
 ## Setup
 
@@ -13,10 +13,8 @@ A Kahoot-style live quiz for CST 315 (Introduction to Cybersecurity). The backen
 python -m venv venv
 venv\Scripts\activate          # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --reload
+uvicorn main:app --reload
 ```
-
-`--host 0.0.0.0` lets phones on the same Wi-Fi reach the API. Use plain `uvicorn main:app --reload` if only this machine needs it.
 
 Create a `.env` file next to `main.py`:
 
@@ -38,15 +36,9 @@ npm run dev
 Optional `frontend/.env.local`:
 
 - `VITE_GOOGLE_CLIENT_ID` – same value as `GOOGLE_CLIENT_ID`.
-- `VITE_API_URL` – backend URL. Defaults to the page's own host on port 8000, which is what you want on a LAN.
+- `VITE_API_URL` – backend URL. Defaults to `http://127.0.0.1:8000`.
 
-### Joining from phones
-
-1. Put the laptop and phones on the same network.
-2. Find the laptop's LAN IP (`ipconfig` on Windows, `ipconfig getifaddr en0` on macOS).
-3. Open `http://<LAN-IP>:5173` on the laptop and host a game. The lobby shows the join link with the PIN already filled in.
-
-Campus Wi-Fi may block device-to-device traffic. If phones can't connect, use a phone hotspot or deploy the app.
+Open `http://localhost:5173`. To try a game on one machine, host in one tab and join as students from other tabs. Use a private window for each extra signed-in student, because the login is shared across normal tabs.
 
 ## Quiz JSON format
 

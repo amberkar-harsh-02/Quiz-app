@@ -42,7 +42,7 @@ add_missing_columns(engine)
 app = FastAPI(title="CST 315 Kahoot Clone")
 
 # Auth uses a bearer header, not cookies, so credentials are not needed. In dev, allow the
-# Vite server on any host so phones on the LAN can reach the API through the laptop's IP.
+# Vite server whether it was opened as localhost or 127.0.0.1.
 frontend_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,

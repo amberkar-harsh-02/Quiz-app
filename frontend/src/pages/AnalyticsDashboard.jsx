@@ -1,35 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiFetch, readToken } from '../api';
+import { ANSWERS } from '../answers';
+import AnswerShape from '../components/AnswerShape';
 
 export default function AnalyticsDashboard() {
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+  const [error, setError] = useState('');
+
   const navigate = useNavigate();
-  const token = localStorage.getItem('kahoot_token');
 
   // Fetch all past sessions on load
   useEffect(() => {
-    if (!token) { navigate('/'); return; }
-    
-    fetch('http://127.0.0.1:8000/sessions/', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => res.json())
-    .then(data => { setSessions(data); setLoading(false); })
-    .catch(err => { console.error(err); setLoading(false); });
-  }, [token, navigate]);
+    if (!readToken()) { navigate('/'); return; }
+
+    apiFetch('/sessions/')
+      .then(setSessions)
+      .catch(err => setError(`Couldn't load sessions: ${err.message}`))
+      .finally(() => setLoading(false));
+  }, [navigate]);
 
   // Fetch detailed analytics for a specific session
   const viewSession = (sessionId) => {
     setLoading(true);
-    fetch(`http://127.0.0.1:8000/analytics/${sessionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => res.json())
-    .then(data => { setSelectedSession(data); setLoading(false); })
-    .catch(err => { console.error(err); setLoading(false); });
+    setError('');
+    apiFetch(`/analytics/${sessionId}`)
+      .then(setSelectedSession)
+      .catch(err => setError(`Couldn't load this session: ${err.message}`))
+      .finally(() => setLoading(false));
   };
 
   if (loading) {
@@ -55,6 +55,8 @@ export default function AnalyticsDashboard() {
           </button>
         </div>
 
+        {error && <div role="alert" className="mb-8 rounded-xl bg-red-50 p-4 font-bold text-red-700">{error}</div>}
+
         {/* VIEW 1: Session Archive (Master List) */}
         {!selectedSession && (
           <div>
@@ -66,11 +68,11 @@ export default function AnalyticsDashboard() {
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {sessions.map((session) => (
-                  <div key={session.id} onClick={() => viewSession(session.id)} className="cursor-pointer rounded-2xl bg-white p-6 shadow-sm transition-transform hover:-translate-y-1 hover:shadow-md border border-gray-100">
+                  <button key={session.id} onClick={() => viewSession(session.id)} className="rounded-2xl border border-gray-100 bg-white p-6 text-left shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                     <div className="mb-2 text-sm font-bold tracking-wider text-blue-500 uppercase">Room: {session.room_code}</div>
                     <h3 className="mb-4 text-2xl font-bold text-gray-800 truncate">{session.quiz_title}</h3>
                     <div className="text-gray-500">{session.player_count} Students Participated</div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -120,10 +122,12 @@ export default function AnalyticsDashboard() {
 
                     {/* Answer Spread */}
                     <div className="flex space-x-2">
-                      <div className="flex-1 rounded bg-red-100 p-2 text-center text-sm font-bold text-red-700">1: {q.spread.red}</div>
-                      <div className="flex-1 rounded bg-blue-100 p-2 text-center text-sm font-bold text-blue-700">2: {q.spread.blue}</div>
-                      <div className="flex-1 rounded bg-yellow-100 p-2 text-center text-sm font-bold text-yellow-700">3: {q.spread.yellow}</div>
-                      <div className="flex-1 rounded bg-green-100 p-2 text-center text-sm font-bold text-green-700">4: {q.spread.green}</div>
+                      {ANSWERS.map(({ color, bg }) => (
+                        <div key={color} className="flex flex-1 items-center justify-center gap-2 rounded bg-gray-100 p-2 text-sm font-bold text-gray-700">
+                          <span style={{ color: bg }}><AnswerShape color={color} className="h-4 w-4" /></span>
+                          {q.spread[color]}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

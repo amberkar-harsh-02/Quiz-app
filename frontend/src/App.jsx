@@ -13,6 +13,7 @@ function App() {
           <Route path="/" element={<StudentView />} />
           <Route path="/host" element={<HostDashboard />} />
           <Route path="/create" element={<QuizBuilder />} />
+          <Route path="/create/:quizId" element={<QuizBuilder />} />
           <Route path="/analytics" element={<AnalyticsDashboard />} />
         </Routes>
       </div>
