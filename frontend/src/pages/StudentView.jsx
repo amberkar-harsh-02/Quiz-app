@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { WS_URL, apiFetch, clearToken, getToken, readToken, setToken } from '../api';
 import JoinScreen from '../components/student/JoinScreen';
 import StudentDashboard from '../components/student/StudentDashboard';
@@ -31,6 +32,7 @@ export default function StudentView() {
 
   const ws = useRef(null);
   const retry = useRef({ attempts: 0, timer: null });
+  const navigate = useNavigate();
 
   const isStudent = user && !user.is_professor;
 
@@ -166,7 +168,12 @@ export default function StudentView() {
 
   const signIn = (token) => {
     setToken(token);
-    setUser(readToken());
+    const payload = readToken();
+    if (payload?.is_professor) {
+      navigate('/host');
+      return;
+    }
+    setUser(payload);
   };
 
   const signOut = () => {

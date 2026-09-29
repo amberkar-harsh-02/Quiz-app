@@ -22,7 +22,7 @@ Create a `.env` file next to `main.py`:
 | --- | --- | --- |
 | `SECRET_KEY` | yes | Signs login tokens. Use a long random string: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `GOOGLE_CLIENT_ID` | for Google sign-in | OAuth client ID from Google Cloud Console |
-| `PROFESSOR_EMAILS` | yes, to host | Comma-separated emails that get host rights, e.g. `prof@csumb.edu,ta@csumb.edu`. Everyone else is a student. |
+| `PROFESSOR_EMAILS` | yes, to host | Comma-separated emails that get host rights, e.g. `prof@csumb.edu,ta@csumb.edu`. Everyone else is a student. After changing it, restart the server (`--reload` doesn't watch `.env`), then log out and sign in again. |
 | `FRONTEND_ORIGIN` | no | Comma-separated origins allowed by CORS. Leave unset in dev to allow any origin on port 5173. |
 
 ### Frontend
