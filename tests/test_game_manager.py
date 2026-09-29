@@ -80,6 +80,45 @@ def test_mark_student_offline_ignores_unknown_room_or_player():
     gm.mark_student_offline(code, "unknown-player")
 
 
+def test_online_count_skips_offline_students():
+    gm = GameManager()
+    code = gm.create_room(1, MagicMock())
+    gm.add_student(code, "Alice", MagicMock())
+    bob = gm.add_student(code, "Bob", MagicMock())
+    gm.mark_student_offline(code, bob)
+
+    assert gm.online_count(code) == 1
+    assert gm.online_count("NOPE00") == 0
+
+
+def test_name_taken_is_case_insensitive_and_ignores_offline():
+    gm = GameManager()
+    code = gm.create_room(1, MagicMock())
+    pid = gm.add_student(code, "Alice", MagicMock())
+
+    assert gm.name_taken(code, " alice ")
+    gm.mark_student_offline(code, pid)
+    assert not gm.name_taken(code, "Alice")
+
+
+def test_reattach_student_swaps_socket_and_keeps_score():
+    gm = GameManager()
+    code = gm.create_room(1, MagicMock())
+    pid = gm.add_student(code, "Alice", MagicMock())
+    gm.active_rooms[code]["students"][pid]["score"] = 700
+    gm.mark_student_offline(code, pid)
+    new_ws = MagicMock()
+
+    assert gm.reattach_student(code, pid, new_ws)
+
+    student = gm.active_rooms[code]["students"][pid]
+    assert student["ws"] is new_ws
+    assert student["status"] == "online"
+    assert student["score"] == 700
+    assert not gm.reattach_student(code, "unknown", MagicMock())
+    assert not gm.reattach_student("NOPE00", pid, MagicMock())
+
+
 def test_broadcast_sends_only_to_online_students():
     gm = GameManager()
     code = gm.create_room(1, MagicMock())

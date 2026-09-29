@@ -60,9 +60,26 @@ def test_register_rejects_duplicate_email_case_insensitive(client, student):
     assert res.json()["detail"] == "Email already registered."
 
 
-def test_register_professor_flag(client):
+def test_register_ignores_self_declared_professor_flag(client):
     res = client.post("/register", json={"email": "p@csumb.edu", "password": "pw", "is_professor": True})
+    assert res.status_code == 200
+    assert res.json()["is_professor"] is False
+
+
+def test_register_grants_professor_from_allowlist(client, monkeypatch):
+    monkeypatch.setattr(main, "PROFESSOR_EMAILS", {"p@csumb.edu"})
+    res = client.post("/register", json={"email": "P@csumb.edu", "password": "pw"})
     assert res.json()["is_professor"] is True
+
+
+def test_login_promotes_account_added_to_allowlist_later(client, db, student, monkeypatch):
+    monkeypatch.setattr(main, "PROFESSOR_EMAILS", {"student@csumb.edu"})
+    res = client.post("/token", data={"username": "student@csumb.edu", "password": "password123"})
+
+    payload = jwt.decode(res.json()["access_token"], main.SECRET_KEY, algorithms=[main.ALGORITHM])
+    assert payload["is_professor"] is True
+    db.refresh(student)
+    assert student.is_professor is True
 
 
 # --- /token ---

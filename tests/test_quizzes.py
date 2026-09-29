@@ -110,11 +110,23 @@ def test_upload_rejects_question_missing_field(client, professor):
     assert "correct_option" in res.json()["detail"]
 
 
-def test_upload_missing_title_or_questions(client, professor):
-    # ValueError falls through to the generic handler, so this surfaces as a 500
+def test_upload_missing_questions(client, professor):
     res = upload(client, professor, {"title": "x"})
-    assert res.status_code == 500
-    assert "title" in res.json()["detail"]
+    assert res.status_code == 400
+    assert "questions" in res.json()["detail"]
+
+
+def test_upload_rejects_invalid_color_and_time_limit(client, db, professor):
+    res = upload(client, professor, {"title": "x", "questions": [builder_question(correct_option="purple")]})
+    assert res.status_code == 400
+    assert "correct_option" in res.json()["detail"]
+
+    res = upload(client, professor, {"title": "x", "questions": [builder_question(time_limit_seconds=0)]})
+    assert res.status_code == 400
+    assert "time_limit_seconds" in res.json()["detail"]
+
+    # Nothing half-saved from the rejected files
+    assert db.query(models.Quiz).count() == 0
 
 
 def test_upload_forbidden_for_student(client, student):
@@ -139,14 +151,24 @@ def test_list_quizzes_only_returns_own(client, db, professor):
 def test_read_quiz_includes_questions(client, db, professor):
     quiz = make_quiz(db, professor, questions=[question_data()])
 
-    res = client.get(f"/quizzes/{quiz.id}")
+    res = client.get(f"/quizzes/{quiz.id}", headers=auth_header(professor))
 
     assert res.status_code == 200
     assert res.json()["questions"][0]["text"] == "2 + 2?"
+    assert res.json()["questions"][0]["explanation"] == "Basic math"
 
 
-def test_read_quiz_not_found(client):
-    assert client.get("/quizzes/999").status_code == 404
+def test_read_quiz_not_found(client, professor):
+    assert client.get("/quizzes/999", headers=auth_header(professor)).status_code == 404
+
+
+def test_read_quiz_hides_answers_from_others(client, db, professor, student):
+    # The response contains correct answers, so students must not be able to fetch it mid-game
+    quiz = make_quiz(db, professor, questions=[question_data()])
+    assert client.get(f"/quizzes/{quiz.id}").status_code == 401
+    assert client.get(f"/quizzes/{quiz.id}", headers=auth_header(student)).status_code == 403
+    other = make_user(db, "other@csumb.edu", is_professor=True)
+    assert client.get(f"/quizzes/{quiz.id}", headers=auth_header(other)).status_code == 403
 
 
 # --- POST /quizzes/{id}/questions/ ---
@@ -156,17 +178,56 @@ def test_add_question_to_quiz(client, db, professor):
     q = question_data()
     del q["explanation"]
 
-    res = client.post(f"/quizzes/{quiz.id}/questions/", json=q)
+    res = client.post(f"/quizzes/{quiz.id}/questions/", json=q, headers=auth_header(professor))
 
     assert res.status_code == 200
     assert res.json()["quiz_id"] == quiz.id
     assert db.query(models.Question).filter_by(quiz_id=quiz.id).count() == 1
 
 
-def test_add_question_to_missing_quiz(client):
+def test_add_question_to_missing_quiz(client, professor):
     q = question_data()
     del q["explanation"]
-    assert client.post("/quizzes/999/questions/", json=q).status_code == 404
+    assert client.post("/quizzes/999/questions/", json=q, headers=auth_header(professor)).status_code == 404
+
+
+def test_add_question_requires_owner(client, db, professor):
+    quiz = make_quiz(db, professor)
+    assert client.post(f"/quizzes/{quiz.id}/questions/", json=question_data()).status_code == 401
+
+
+# --- PUT /quizzes/{id} ---
+
+def test_update_quiz_replaces_title_and_questions(client, db, professor):
+    quiz = make_quiz(db, professor, "Old", questions=[question_data(text="Old Q1"), question_data(text="Old Q2")])
+    payload = {"title": "New", "questions": [builder_question(text="New Q1", correct_option="green")]}
+
+    res = client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor))
+
+    assert res.status_code == 200
+    assert res.json()["title"] == "New"
+    assert [q["text"] for q in res.json()["questions"]] == ["New Q1"]
+    db.expire_all()
+    assert db.query(models.Question).count() == 1
+
+
+def test_update_quiz_owned_by_someone_else(client, db, professor):
+    other = make_user(db, "other@csumb.edu", is_professor=True)
+    quiz = make_quiz(db, other)
+    payload = {"title": "Hijack", "questions": [builder_question()]}
+    assert client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor)).status_code == 403
+
+
+def test_update_quiz_blocked_once_played(client, db, professor):
+    quiz = make_quiz(db, professor, questions=[question_data()])
+    db.add(models.GameSession(quiz_id=quiz.id, room_code="PLAYED"))
+    db.commit()
+    payload = {"title": "New", "questions": [builder_question()]}
+
+    res = client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor))
+
+    assert res.status_code == 409
+    assert "Duplicate" in res.json()["detail"]
 
 
 # --- DELETE /quizzes/{id} ---
@@ -193,4 +254,16 @@ def test_delete_quiz_owned_by_someone_else(client, db, professor):
     res = client.delete(f"/quizzes/{quiz.id}", headers=auth_header(professor))
 
     assert res.status_code == 403
+    assert db.query(models.Quiz).count() == 1
+
+
+def test_delete_quiz_blocked_once_played(client, db, professor):
+    # Deleting would orphan the session's grades and break analytics
+    quiz = make_quiz(db, professor, questions=[question_data()])
+    db.add(models.GameSession(quiz_id=quiz.id, room_code="PLAYED"))
+    db.commit()
+
+    res = client.delete(f"/quizzes/{quiz.id}", headers=auth_header(professor))
+
+    assert res.status_code == 409
     assert db.query(models.Quiz).count() == 1

@@ -33,23 +33,6 @@ def played_session(db, professor, student):
     return {"quiz": quiz, "session": session, "q1": q1, "q2": q2}
 
 
-# --- GET /receipt ---
-
-def test_receipt_returns_csv(client, played_session):
-    sid = played_session["session"].id
-    res = client.get(f"/receipt/{sid}/Bob Smith")
-
-    assert res.status_code == 200
-    assert res.headers["content-type"].startswith("text/csv")
-    assert "filename=cst315_receipt_Bob_Smith.csv" in res.headers["content-disposition"]
-    assert res.text == f"Student Name,Total Score,Session ID\nBob Smith,600,{sid}\n"
-
-
-def test_receipt_not_found(client, played_session):
-    sid = played_session["session"].id
-    assert client.get(f"/receipt/{sid}/Nobody").status_code == 404
-
-
 # --- GET /sessions/ ---
 
 def test_sessions_lists_own_sessions_newest_first(client, db, professor, played_session):
@@ -124,6 +107,16 @@ def test_analytics_not_found(client, professor):
     assert client.get("/analytics/999", headers=auth_header(professor)).status_code == 404
 
 
+def test_analytics_session_whose_quiz_is_gone(client, db, professor):
+    db.add(models.GameSession(quiz_id=999, room_code="ORPHAN"))
+    db.commit()
+    session = db.query(models.GameSession).one()
+
+    res = client.get(f"/analytics/{session.id}", headers=auth_header(professor))
+
+    assert res.status_code == 404
+
+
 def test_analytics_forbidden_for_other_professor(client, db, played_session):
     other = make_user(db, "other@csumb.edu", is_professor=True)
     res = client.get(f"/analytics/{played_session['session'].id}", headers=auth_header(other))
@@ -142,6 +135,10 @@ def test_student_history_details(client, student, played_session):
     assert entry["quiz_title"] == "Played Quiz"
     assert entry["total_score"] == 1800
     assert entry["accuracy"] == 100
+    assert entry["correct_answers"] == 2
+    assert entry["total_questions"] == 2
+    assert entry["session_id"] == played_session["session"].id
+    assert entry["played_at"]
 
     d1, d2 = entry["details"]
     assert d1["question_text"] == "Q1"
@@ -163,7 +160,9 @@ def test_student_history_newest_first(client, db, student, played_session):
     history = client.get("/student/history", headers=auth_header(student)).json()
 
     assert [h["total_score"] for h in history] == [5, 1800]
-    assert history[0]["accuracy"] == 0  # no answers recorded -> no division by zero
+    # Unanswered questions count as wrong, matching the professor's analytics
+    assert history[0]["accuracy"] == 0
+    assert history[0]["total_questions"] == 2
 
 
 def test_student_history_empty_for_new_user(client, db):

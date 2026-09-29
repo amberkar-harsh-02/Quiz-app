@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./kahoot.db"
@@ -19,3 +19,11 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def add_missing_columns(bind):
+    """create_all() never alters existing tables, so add columns introduced after a DB was created."""
+    with bind.begin() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(questions)"))}
+        if columns and "explanation" not in columns:
+            conn.execute(text("ALTER TABLE questions ADD COLUMN explanation TEXT"))

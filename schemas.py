@@ -1,11 +1,10 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 
 
 class UserCreate(BaseModel):
     email: str
     password: str
-    is_professor: bool = False
 
 class UserResponse(BaseModel):
     id: int
@@ -23,7 +22,8 @@ class QuestionBase(BaseModel):
     option_yellow: str
     option_green: str
     correct_option: str
-    time_limit_seconds: int = 30
+    time_limit_seconds: int = 15
+    explanation: Optional[str] = None
 
 class QuestionCreate(QuestionBase):
     pass
@@ -47,8 +47,23 @@ class Quiz(QuizBase):
     owner_id: int
     questions: List[Question] = []
 
-class Config:
-    from_attributes = True
+    class Config:
+        from_attributes = True
+
+# --- Full quiz payload (visual builder, JSON upload and edit share this) ---
+class QuestionBuilderItem(BaseModel):
+    text: str = Field(min_length=1)
+    option_red: str = Field(min_length=1)
+    option_blue: str = Field(min_length=1)
+    option_yellow: str = Field(min_length=1)
+    option_green: str = Field(min_length=1)
+    correct_option: Literal["red", "blue", "yellow", "green"]
+    time_limit_seconds: int = Field(default=15, ge=5, le=120)
+    explanation: Optional[str] = ""
+
+class FullQuizPayload(BaseModel):
+    title: str = Field(min_length=1)
+    questions: List[QuestionBuilderItem] = Field(min_length=1)
 
 class GoogleAuthRequest(BaseModel):
     token: str
