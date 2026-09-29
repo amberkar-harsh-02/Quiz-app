@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#0F1B2D"/>
-  <polygon points="10,4 15,13 5,13" fill="#e21b3c"/>
-  <polygon points="22,3.5 27,8.5 22,13.5 17,8.5" fill="#1368ce"/>
-  <circle cx="10" cy="23" r="5" fill="#d89e00"/>
-  <rect x="17.5" y="18.5" width="9" height="9" fill="#26890c"/>
+  <rect x="1" y="1" width="30" height="30" rx="8" fill="#12305A"/>
+  <rect x="1" y="1" width="30" height="27" rx="8" fill="#1F4F8F"/>
+  <text x="16" y="21.5" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="19" font-weight="800" fill="#ffffff">?</text>
 </svg>

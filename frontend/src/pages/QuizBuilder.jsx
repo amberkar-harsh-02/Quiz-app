@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch, readToken } from '../api';
 import { ANSWERS } from '../answers';
-import AnswerShape from '../components/AnswerShape';
+import AnswerKey from '../components/AnswerKey';
 import { Alert, Button, Field, Panel, Wordmark, inputClass } from '../components/ui';
 
 const QUESTION_FIELDS = ['text', 'option_red', 'option_blue', 'option_yellow', 'option_green', 'correct_option', 'time_limit_seconds', 'explanation'];
@@ -149,17 +149,17 @@ export default function QuizBuilder() {
               <fieldset className="mb-5">
                 <legend className="mb-2 text-sm text-muted">Answers. Pick the correct one with the radio button.</legend>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {ANSWERS.map(({ color, bg }) => {
+                  {ANSWERS.map(({ color, letter }) => {
                     const isCorrect = q.correct_option === color;
                     return (
                       <label
                         key={color}
                         className={`flex items-center gap-3 rounded-chip border bg-white py-1 pl-3 pr-3 transition-colors ${isCorrect ? 'border-ok bg-ok-soft' : 'border-line hover:border-muted'}`}
                       >
-                        <span style={{ color: bg }}><AnswerShape color={color} className="h-5 w-5" /></span>
+                        <AnswerKey color={color} />
                         <input
                           type="text"
-                          placeholder={`${color.charAt(0).toUpperCase() + color.slice(1)} answer`}
+                          placeholder={`Answer ${letter}`}
                           value={q[`option_${color}`]}
                           onChange={(e) => updateQuestion(idx, `option_${color}`, e.target.value)}
                           className="w-full rounded-chip bg-transparent px-1 py-2 font-bold placeholder:font-normal placeholder:text-muted/70 focus-visible:ring-offset-0"
@@ -167,7 +167,7 @@ export default function QuizBuilder() {
                         <input
                           type="radio"
                           name={`correct_${q.key}`}
-                          aria-label={`${color} is correct`}
+                          aria-label={`${letter} is correct`}
                           checked={isCorrect}
                           onChange={() => updateQuestion(idx, 'correct_option', color)}
                           className="h-5 w-5 shrink-0 cursor-pointer accent-[#1E7A3E]"

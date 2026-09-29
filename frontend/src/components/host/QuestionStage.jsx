@@ -1,5 +1,5 @@
 import { ANSWERS } from '../../answers';
-import AnswerShape from '../AnswerShape';
+import AnswerKey from '../AnswerKey';
 import { Button } from '../ui';
 import TimerRing from './TimerRing';
 
@@ -30,7 +30,7 @@ export default function QuestionStage({ question, timeLeft, answersCount, totalP
             className="flex items-center gap-6 rounded-control px-8 py-6 text-4xl font-bold"
             style={{ backgroundColor: bg, color: text }}
           >
-            <AnswerShape color={color} className="h-14 w-14 shrink-0" />
+            <AnswerKey color={color} size="xl" onColor />
             <span>{question.options[color]}</span>
           </div>
         ))}

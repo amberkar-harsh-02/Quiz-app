@@ -1,6 +1,3 @@
-import { ANSWERS } from '../answers';
-import AnswerShape from './AnswerShape';
-
 // Small shared building blocks so every page uses the same buttons, fields and messages
 
 const BUTTON_VARIANTS = {
@@ -71,10 +68,12 @@ export const pinInputClass =
 export function Wordmark({ title }) {
   return (
     <span className="inline-flex items-center gap-3">
-      <span className="grid grid-cols-2 gap-0.5" aria-hidden="true">
-        {ANSWERS.map(({ color, bg }) => (
-          <span key={color} style={{ color: bg }}><AnswerShape color={color} className="h-3.5 w-3.5" /></span>
-        ))}
+      {/* A single keycap: the app's answers are keys A-D, and this one is the question */}
+      <span
+        aria-hidden="true"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-[28%] border-b-[3px] border-black/35 bg-brand font-mono text-lg font-extrabold leading-none text-white"
+      >
+        ?
       </span>
       <span className="text-2xl font-bold tracking-tight">{title}</span>
     </span>

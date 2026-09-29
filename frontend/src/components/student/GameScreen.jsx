@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ANSWERS, answerFor } from '../../answers';
-import AnswerShape from '../AnswerShape';
+import { ANSWERS } from '../../answers';
+import AnswerKey from '../AnswerKey';
 import useCountUp from '../useCountUp';
 import { Button } from '../ui';
 
@@ -71,7 +71,7 @@ function QuestionView({ game, timeLeft: rawTimeLeft, onAnswer }) {
                   ${locked && !isSelected ? 'opacity-25' : ''}`}
                 style={{ backgroundColor: bg, color: text }}
               >
-                <AnswerShape color={color} className="h-8 w-8 shrink-0" />
+                <AnswerKey color={color} size="lg" onColor />
                 <span className="break-words">{question.options[color]}</span>
               </button>
             );
@@ -85,7 +85,6 @@ function QuestionView({ game, timeLeft: rawTimeLeft, onAnswer }) {
 function ResultView({ result }) {
   const answered = result.selected_option !== null;
   const tone = result.correct ? 'bg-ok' : answered ? 'bg-bad' : 'bg-ink';
-  const correctAnswer = answerFor(result.correct_option);
   const points = useCountUp(result.points_earned);
 
   return (
@@ -103,7 +102,7 @@ function ResultView({ result }) {
         <div className="flex max-w-md flex-col items-center gap-2 motion-safe:animate-rise">
           <p className="text-white/80">The answer was</p>
           <div className="flex items-center gap-3 rounded-control bg-white px-5 py-3 text-lg font-bold text-ink">
-            <span style={{ color: correctAnswer.bg }}><AnswerShape color={result.correct_option} className="h-6 w-6" /></span>
+            <AnswerKey color={result.correct_option} />
             {result.correct_text}
           </div>
         </div>

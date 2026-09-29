@@ -62,7 +62,7 @@ Upload from the host dashboard with **Upload JSON**:
 }
 ```
 
-- `correct_option` is one of `red`, `blue`, `yellow`, `green`.
+- `correct_option` is one of `red`, `blue`, `yellow`, `green`. These are storage keys; players see them as answers A, B, C and D (`option_red` is A, `option_blue` is B, and so on).
 - `time_limit_seconds` is optional (default 15, allowed 5–120).
 - `explanation` is optional. Students see it on their review page.
 

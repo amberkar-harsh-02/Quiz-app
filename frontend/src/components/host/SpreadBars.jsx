@@ -1,7 +1,7 @@
 import { ANSWERS } from '../../answers';
-import AnswerShape from '../AnswerShape';
+import AnswerKey from '../AnswerKey';
 
-// One row per answer: shape, optional answer text, a bar sized by how many picked it, and the count.
+// One row per answer: letter key, optional answer text, a bar sized by how many picked it, and the count.
 // `onStage` switches to the dark projector colors.
 export default function SpreadBars({ spread, options, correctOption, onStage = false }) {
   const total = Object.values(spread).reduce((a, b) => a + b, 0);
@@ -21,7 +21,7 @@ export default function SpreadBars({ spread, options, correctOption, onStage = f
             }`}
           >
             <div className="flex min-w-0 items-center gap-3">
-              <span style={{ color: bg }}><AnswerShape color={color} className={onStage ? 'h-7 w-7' : 'h-5 w-5'} /></span>
+              <AnswerKey color={color} size={onStage ? 'lg' : 'sm'} />
               {options && <span className="truncate">{options[color]}</span>}
               {isCorrect && (
                 <span className="shrink-0 font-bold text-ok motion-safe:animate-pop" style={{ animationDelay: '300ms', color: onStage ? '#7ED49B' : undefined }}>

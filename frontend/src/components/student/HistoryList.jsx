@@ -1,5 +1,5 @@
 import { answerFor } from '../../answers';
-import AnswerShape from '../AnswerShape';
+import AnswerKey from '../AnswerKey';
 import { Alert, Panel } from '../ui';
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -17,7 +17,7 @@ function AnswerLine({ label, color, text, tone }) {
   const answer = answerFor(color);
   return (
     <div className={`flex items-start gap-3 rounded-chip border px-3 py-2 ${tone}`}>
-      {answer && <span className="mt-0.5 shrink-0" style={{ color: answer.bg }}><AnswerShape color={color} className="h-4 w-4" /></span>}
+      {answer && <span className="mt-0.5"><AnswerKey color={color} size="sm" /></span>}
       <div>
         <div className="text-sm text-muted">{label}</div>
         <div className="font-bold">{text}</div>
