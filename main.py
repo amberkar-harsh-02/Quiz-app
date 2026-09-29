@@ -616,8 +616,6 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                     del manager.active_rooms[room_code]
 
     except WebSocketDisconnect:
-        manager.mark_student_offline(room_code, player_id)  
-        
         # --- NEW: Prevent Ghost Players from stalling the host timer ---
         room = manager.active_rooms.get(room_code)
         if room and "host_ws" in room:
