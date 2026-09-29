@@ -176,7 +176,10 @@ def test_full_game_scores_and_persists_results(client, db, quiz, professor, stud
                 "index": 0,
                 "total": 2,
             }
-            assert "correct" not in recv_event(alice, "show_question")["question"]
+            # Students get neither the correct answer nor the answer texts (those are on the projector)
+            assert recv_event(alice, "show_question")["question"] == {
+                "text": "Q1", "time_limit": 20, "index": 0, "total": 2,
+            }
             recv_event(bob, "show_question")
 
             # Alice answers right straight away; the forged time_remaining_ms is ignored
@@ -358,6 +361,7 @@ def test_reconnect_with_player_id_keeps_score_and_resumes_question(client, quiz,
         assert question["text"] == "Q1"
         assert 0 < question["time_remaining"] <= 20
         assert "selected_option" not in question
+        assert "options" not in question
 
         s.send_json({"event": "submit_answer", "selected_option": "blue"})
         assert recv_event(host, "answer_received")["answers_submitted"] == 1

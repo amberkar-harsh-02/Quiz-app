@@ -425,17 +425,23 @@ def get_student_history(db: Session = Depends(get_db), current_user: models.User
 
 # --- LIVE GAME HELPERS ---
 
-def question_view(room: dict) -> dict:
-    """The current question as students and the host see it (never includes the answer)."""
+def question_view(room: dict, for_host: bool = False) -> dict:
+    """The current question (never includes the correct answer).
+
+    Only the host gets the answer texts: students answer by letter while reading the
+    choices off the projector, so their devices never receive them during a question.
+    """
     index = room["current_question_index"]
     q = room["questions"][index]
-    return {
+    view = {
         "text": q["text"],
-        "options": q["options"],
         "time_limit": q["time_limit"],
         "index": index,
         "total": len(room["questions"]),
     }
+    if for_host:
+        view["options"] = q["options"]
+    return view
 
 def answers_in(room: dict) -> int:
     """Answers to the current question from students who are still connected."""
@@ -482,9 +488,8 @@ async def send_to_student(student: dict, message: dict):
 async def show_current_question(room_code: str, room: dict):
     room["current_state"] = "question_active"
     room["question_started_at"] = time.monotonic()
-    payload = {"event": "show_question", "question": question_view(room)}
-    await notify_host(room, payload)
-    await manager.broadcast_to_students(room_code, payload)
+    await notify_host(room, {"event": "show_question", "question": question_view(room, for_host=True)})
+    await manager.broadcast_to_students(room_code, {"event": "show_question", "question": question_view(room)})
 
 async def show_results(room: dict):
     """Closes the current question: answer reveal for the host, personal result for each student."""
