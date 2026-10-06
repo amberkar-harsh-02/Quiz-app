@@ -22,7 +22,8 @@ class QuestionBase(BaseModel):
     option_yellow: str
     option_green: str
     correct_option: str
-    time_limit_seconds: int = 15
+    # None means no timer for this question
+    time_limit_seconds: Optional[int] = 15
     explanation: Optional[str] = None
 
 class QuestionCreate(QuestionBase):
@@ -38,6 +39,7 @@ class Question(QuestionBase):
 # --- Quizzes ---
 class QuizBase(BaseModel):
     title: str
+    use_timer: bool = True
 
 class QuizCreate(QuizBase):
     pass
@@ -58,11 +60,14 @@ class QuestionBuilderItem(BaseModel):
     option_yellow: str = Field(min_length=1)
     option_green: str = Field(min_length=1)
     correct_option: Literal["red", "blue", "yellow", "green"]
-    time_limit_seconds: int = Field(default=15, ge=5, le=120)
+    # null = no timer for this question
+    time_limit_seconds: Optional[int] = Field(default=15, ge=5, le=120)
     explanation: Optional[str] = ""
 
 class FullQuizPayload(BaseModel):
     title: str = Field(min_length=1)
+    # false = no question in the quiz is timed, whatever its own time limit says
+    use_timer: bool = True
     questions: List[QuestionBuilderItem] = Field(min_length=1)
 
 class GoogleAuthRequest(BaseModel):

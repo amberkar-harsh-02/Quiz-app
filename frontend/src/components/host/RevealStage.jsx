@@ -38,14 +38,27 @@ export default function RevealStage({ question, reveal, leaderboard, secondsLeft
       </section>
 
       <div className="flex items-center justify-between gap-6 border-t border-white/10 pt-6">
+        {/* secondsLeft is null after a question without a timer: wait for the professor */}
         <p className="text-xl text-white/60">
-          {reveal.is_last_question ? 'Final results' : 'Next question'} in <span className="font-mono font-extrabold text-white">{secondsLeft}</span>...
+          {secondsLeft == null ? (
+            reveal.is_last_question ? 'That was the last question.' : 'Take your time. Move on when the class is ready.'
+          ) : (
+            <>
+              {reveal.is_last_question ? 'Final results' : 'Next question'} in <span className="font-mono font-extrabold text-white">{secondsLeft}</span>...
+            </>
+          )}
         </p>
         <div className="flex gap-4">
           {!reveal.is_last_question && (
             <Button variant="stage" onClick={onEnd} className="hover:!bg-[#F97066]/15">End Game Early</Button>
           )}
-          <Button variant="stage" onClick={onNext}>Skip Delay</Button>
+          {secondsLeft == null ? (
+            <Button onClick={onNext} className="bg-white !text-stage hover:bg-white/90">
+              {reveal.is_last_question ? 'Show Final Results' : 'Next Question'}
+            </Button>
+          ) : (
+            <Button variant="stage" onClick={onNext}>Skip Delay</Button>
+          )}
         </div>
       </div>
     </div>

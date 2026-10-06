@@ -88,13 +88,13 @@ export default function StudentView() {
         }));
       } else if (data.event === 'show_question') {
         const q = data.question;
-        const secondsLeft = q.time_remaining ?? q.time_limit;
+        const secondsLeft = q.time_remaining ?? q.time_limit;   // both null when there's no timer
         setGame((g) => ({
           ...g,
           phase: q.selected_option ? 'answered' : 'question',
           question: q,
           selected: q.selected_option ?? null,
-          deadline: Date.now() + secondsLeft * 1000,
+          deadline: secondsLeft == null ? null : Date.now() + secondsLeft * 1000,
           result: null,
         }));
       } else if (data.event === 'answer_result') {

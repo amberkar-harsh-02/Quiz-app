@@ -130,6 +130,7 @@ export default function HostDashboard() {
         setAnswersCount(data.answers_submitted);
       } else if (data.event === 'show_question') {
         setCurrentQuestion(data.question);
+        // null for a question without a timer, which stops the countdown effect above
         setTimeLeft(data.question.time_limit);
         setAnswersCount(0);
         setView('question');
@@ -140,7 +141,8 @@ export default function HostDashboard() {
         setLeaderboard(data.top_players.slice(0, 3));
         setReveal(data);
         // Leave time to read the explanation out
-        setLeaderboardTimeLeft(data.explanation ? 10 : 5);
+        // After an untimed question the results wait for the professor (null stops the countdown)
+        setLeaderboardTimeLeft(data.auto_advance === false ? null : data.explanation ? 10 : 5);
         setView('leaderboard');
       } else if (data.event === 'quiz_finished') {
         // Automatically end the game when out of questions
@@ -242,7 +244,7 @@ export default function HostDashboard() {
               <li key={quiz.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
                 <div className="min-w-0 flex-grow">
                   <h2 className="truncate text-lg font-bold">{quiz.title}</h2>
-                  <p className="text-sm text-muted">{quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}</p>
+                  <p className="text-sm text-muted">{quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}{quiz.use_timer === false && ', no timer'}</p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => deleteQuiz(quiz)} className="hover:!bg-bad-soft hover:!text-bad">Delete</Button>

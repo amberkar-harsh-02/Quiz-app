@@ -29,6 +29,10 @@ PROFESSOR_EMAILS = {e.strip().lower() for e in os.getenv("PROFESSOR_EMAILS", "")
 
 # Answers that arrive this long after the timer ends (network lag) still count, for 0 speed bonus
 ANSWER_GRACE_SECONDS = 1.0
+# Questions without a timer still reward speed: full bonus within this many seconds...
+UNTIMED_FULL_BONUS_SECONDS = 5
+# ...fading to no bonus at this many seconds
+UNTIMED_NO_BONUS_SECONDS = 60
 MAX_NICKNAME_LENGTH = 20
 COLORS = ("red", "blue", "yellow", "green")
 
@@ -199,6 +203,7 @@ def ensure_never_played(quiz: models.Quiz, db: Session, action: str):
 def save_quiz(db: Session, quiz: models.Quiz, payload: schemas.FullQuizPayload) -> models.Quiz:
     """Writes the title and replaces all questions in a single commit."""
     quiz.title = payload.title
+    quiz.use_timer = payload.use_timer
     quiz.questions = [models.Question(**q.model_dump()) for q in payload.questions]
     db.add(quiz)
     db.commit()
@@ -443,6 +448,17 @@ def question_view(room: dict, for_host: bool = False) -> dict:
         view["options"] = q["options"]
     return view
 
+def speed_bonus(time_limit, elapsed: float):
+    """0-500 bonus for answering fast, or None if the answer came in too late to count."""
+    if time_limit is None:
+        # No deadline: full bonus early on, fading linearly to nothing
+        fade = (UNTIMED_NO_BONUS_SECONDS - elapsed) / (UNTIMED_NO_BONUS_SECONDS - UNTIMED_FULL_BONUS_SECONDS)
+        return int(min(max(fade, 0), 1) * 500)
+    if elapsed > time_limit + ANSWER_GRACE_SECONDS:
+        return None
+    time_remaining = min(max(time_limit - elapsed, 0), time_limit)
+    return int(time_remaining / time_limit * 500)
+
 def answers_in(room: dict) -> int:
     """Answers to the current question from students who are still connected."""
     index = room["current_question_index"]
@@ -510,6 +526,8 @@ async def show_results(room: dict):
         "explanation": q["explanation"],
         "spread": spread,
         "is_last_question": index == len(room["questions"]) - 1,
+        # Results after an untimed question wait for the professor instead of counting down
+        "auto_advance": q["time_limit"] is not None,
     })
 
     for s in room["students"].values():
@@ -549,7 +567,8 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                     "green": q.option_green
                 },
                 "correct": q.correct_option,
-                "time_limit": q.time_limit_seconds,
+                # None = no timer, either for this question or for the whole quiz
+                "time_limit": q.time_limit_seconds if quiz.use_timer else None,
                 "explanation": q.explanation or ""
             } for q in quiz.questions
         ]
@@ -724,7 +743,8 @@ async def websocket_student(
             index = room["current_question_index"]
             elapsed = time.monotonic() - room["question_started_at"]
             question = question_view(room)
-            question["time_remaining"] = max(0, question["time_limit"] - elapsed)
+            if question["time_limit"] is not None:
+                question["time_remaining"] = max(0, question["time_limit"] - elapsed)
             if student.get("last_answered_index") == index:
                 question["selected_option"] = student.get("last_selected_option")
             await websocket.send_json({"event": "show_question", "question": question})
@@ -757,14 +777,13 @@ async def websocket_student(
 
                 # The server keeps the clock, so a client can't claim extra time for a bigger bonus
                 current_question = room["questions"][current_q_index]
-                time_limit = current_question["time_limit"]
                 elapsed = time.monotonic() - room["question_started_at"]
-                if elapsed > time_limit + ANSWER_GRACE_SECONDS:
+                bonus = speed_bonus(current_question["time_limit"], elapsed)
+                if bonus is None:
                     continue
-                time_remaining = min(max(time_limit - elapsed, 0), time_limit)
 
                 is_correct = (selected_option == current_question["correct"])
-                points = 500 + int(time_remaining / time_limit * 500) if is_correct else 0
+                points = 500 + bonus if is_correct else 0
 
                 student["last_answered_index"] = current_q_index
                 student["last_selected_option"] = selected_option

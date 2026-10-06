@@ -19,7 +19,7 @@ export default function QuestionStage({ question, timeLeft, answersCount, totalP
               <span className="text-white/40">/{totalPlayers}</span>
             </div>
           </div>
-          <TimerRing timeLeft={timeLeft} total={question.time_limit} />
+          {question.time_limit != null && <TimerRing timeLeft={timeLeft} total={question.time_limit} />}
         </div>
       </div>
 
@@ -37,7 +37,11 @@ export default function QuestionStage({ question, timeLeft, answersCount, totalP
       </div>
 
       <div className="flex justify-end">
-        <Button variant="stage" size="lg" onClick={onSkip}>Skip Timer</Button>
+        {question.time_limit != null ? (
+          <Button variant="stage" size="lg" onClick={onSkip}>Skip Timer</Button>
+        ) : (
+          <Button size="lg" onClick={onSkip} className="bg-white !text-stage hover:bg-white/90">Show Results</Button>
+        )}
       </div>
     </div>
   );

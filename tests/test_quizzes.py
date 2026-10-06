@@ -59,6 +59,33 @@ def test_builder_applies_defaults(client, db, professor):
     assert stored.explanation == ""
 
 
+def test_builder_saves_timer_settings(client, db, professor):
+    payload = {
+        "title": "Discussion",
+        "use_timer": False,
+        "questions": [builder_question(text="Untimed", time_limit_seconds=None), builder_question(text="Timed")],
+    }
+    res = client.post("/quizzes/builder", json=payload, headers=auth_header(professor))
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["use_timer"] is False
+    assert [q["time_limit_seconds"] for q in body["questions"]] == [None, 20]
+
+
+def test_builder_defaults_to_timer_on(client, professor):
+    res = client.post("/quizzes/builder", json={"title": "T", "questions": [builder_question()]}, headers=auth_header(professor))
+    assert res.json()["use_timer"] is True
+
+
+def test_upload_accepts_untimed_questions(client, professor):
+    q = builder_question()
+    q["time_limit_seconds"] = None
+    res = upload(client, professor, {"title": "x", "use_timer": True, "questions": [q]})
+    assert res.status_code == 200
+    assert res.json()["questions"][0]["time_limit_seconds"] is None
+
+
 def test_builder_rejects_incomplete_question(client, professor):
     q = builder_question()
     del q["option_green"]

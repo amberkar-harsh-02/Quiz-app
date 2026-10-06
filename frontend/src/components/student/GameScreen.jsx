@@ -33,27 +33,35 @@ function CenteredMessage({ title, children }) {
 
 function QuestionView({ game, timeLeft: rawTimeLeft, onAnswer }) {
   const { question, selected, phase } = game;
+  // No timer: the question stays open until everyone answers or the professor shows the results
+  const timed = question.time_limit != null;
   // The clock can lag one tick behind a newly arrived question
-  const timeLeft = Math.min(rawTimeLeft, question.time_limit * 1000);
+  const timeLeft = timed ? Math.min(rawTimeLeft, question.time_limit * 1000) : null;
   const locked = phase === 'answered' || timeLeft === 0;
-  const fraction = timeLeft / (question.time_limit * 1000);
-  const urgent = timeLeft <= 5000;
+  const fraction = timed ? timeLeft / (question.time_limit * 1000) : 1;
+  const urgent = timed && timeLeft <= 5000;
 
   return (
     <>
-      <div className="h-1.5 w-full shrink-0 bg-white/10" role="progressbar" aria-label="Time left" aria-valuemin={0} aria-valuemax={question.time_limit} aria-valuenow={Math.ceil(timeLeft / 1000)}>
-        <div
-          className={`h-full transition-[width,background-color] duration-200 ease-linear motion-reduce:transition-none ${urgent ? 'bg-[#F97066]' : 'bg-white'}`}
-          style={{ width: `${fraction * 100}%` }}
-        />
-      </div>
+      {timed ? (
+        <div className="h-1.5 w-full shrink-0 bg-white/10" role="progressbar" aria-label="Time left" aria-valuemin={0} aria-valuemax={question.time_limit} aria-valuenow={Math.ceil(timeLeft / 1000)}>
+          <div
+            className={`h-full transition-[width,background-color] duration-200 ease-linear motion-reduce:transition-none ${urgent ? 'bg-[#F97066]' : 'bg-white'}`}
+            style={{ width: `${fraction * 100}%` }}
+          />
+        </div>
+      ) : (
+        <div className="h-1.5 w-full shrink-0" />
+      )}
 
       <div className="mx-auto flex w-full max-w-5xl flex-grow flex-col gap-4 p-3 sm:p-6">
         <div className="flex items-start justify-between gap-6 px-1 pt-2">
           <p className="text-xl font-bold leading-snug sm:text-2xl">{question.text}</p>
-          <span className={`shrink-0 font-mono text-3xl font-extrabold transition-colors ${urgent ? 'text-[#F97066]' : 'text-white'}`}>
-            {Math.ceil(timeLeft / 1000)}
-          </span>
+          {timed && (
+            <span className={`shrink-0 font-mono text-3xl font-extrabold transition-colors ${urgent ? 'text-[#F97066]' : 'text-white'}`}>
+              {Math.ceil(timeLeft / 1000)}
+            </span>
+          )}
         </div>
 
         <p role="status" className={`min-h-6 px-1 text-white/60 ${locked ? '' : 'invisible'}`}>
@@ -153,7 +161,7 @@ function GameOverView({ final, isSignedIn, onExit, onReview }) {
 export default function GameScreen({ game, isSignedIn, onAnswer, onExit, onReview }) {
   const { phase } = game;
   const inQuestion = phase === 'question' || phase === 'answered';
-  const timeLeft = useTimeLeft(game.deadline ?? 0, inQuestion);
+  const timeLeft = useTimeLeft(game.deadline ?? 0, inQuestion && game.deadline != null);
   const gameEnded = phase === 'game_over' || phase === 'host_left';
 
   const leave = () => {

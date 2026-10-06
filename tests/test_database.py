@@ -17,3 +17,18 @@ def test_adds_explanation_column_to_old_database_and_keeps_rows():
         rows = conn.execute(text("SELECT text, explanation FROM questions")).all()
     assert "explanation" in columns
     assert rows == [("Old question", None)]
+
+
+def test_adds_use_timer_column_to_old_quizzes_and_defaults_to_on():
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE questions (id INTEGER PRIMARY KEY, text VARCHAR)"))
+        conn.execute(text("CREATE TABLE quizzes (id INTEGER PRIMARY KEY, title VARCHAR)"))
+        conn.execute(text("INSERT INTO quizzes (title) VALUES ('Old quiz')"))
+
+    add_missing_columns(engine)
+    add_missing_columns(engine)
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT title, use_timer FROM quizzes")).all()
+    assert rows == [("Old quiz", 1)]

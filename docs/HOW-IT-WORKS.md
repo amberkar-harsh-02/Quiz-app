@@ -8,6 +8,7 @@ This document explains how the app is put together: who does what, how a live ga
 - [Roles and sign-in](#roles-and-sign-in)
 - [A game from start to finish](#a-game-from-start-to-finish)
 - [WebSocket messages](#websocket-messages)
+- [Questions without a timer](#questions-without-a-timer)
 - [Scoring and the timer](#scoring-and-the-timer)
 - [Reconnecting](#reconnecting)
 - [What each side can see](#what-each-side-can-see)
@@ -82,7 +83,7 @@ A student taps a letter and the answer locks in. The projector's answer count go
 
 ### 3. Results for that question
 
-The question closes when the timer hits zero, when everyone still connected has answered, or when the professor clicks **Skip Timer**. Then:
+The question closes when the timer hits zero, when everyone still connected has answered, or when the professor clicks **Skip Timer**. A question with no timer (see [Questions without a timer](#questions-without-a-timer)) has no countdown, so it closes only when everyone has answered or the professor clicks **Show Results**. Then:
 
 - The **projector** shows how many picked each answer, marks the correct one, shows the explanation and the top 3.
 - Each **student** sees their own result: correct or incorrect, points earned and current place.
@@ -93,7 +94,7 @@ The question closes when the timer hits zero, when everyone still connected has 
 | --- | --- |
 | ![Correct](screenshots/student-correct.png) | ![Incorrect](screenshots/student-incorrect.png) |
 
-After a few seconds (10 when there's an explanation, otherwise 5) the next question starts. The professor can also click **Skip Delay** or **End Game Early**.
+After a few seconds (10 when there's an explanation, otherwise 5) the next question starts. The professor can also click **Skip Delay** or **End Game Early**. After a question with no timer, the results stay up until the professor clicks **Next Question**.
 
 ### 4. Game over
 
@@ -140,7 +141,7 @@ All messages are JSON objects with an `event` field.
 | server → host | `show_question` | `text`, `options` (the four answer texts), `time_limit`, `index`, `total` |
 | server → host | `answer_received` | A student answered. `answers_submitted`, `total_players` |
 | host → server | `time_up` / `show_leaderboard` | The timer ended, or the professor clicked Skip Timer |
-| server → host | `leaderboard` | `top_players`, `correct_option`, `spread`, `explanation`, `is_last_question` |
+| server → host | `leaderboard` | `top_players`, `correct_option`, `spread`, `explanation`, `is_last_question`, `auto_advance` (false after a question with no timer) |
 | host → server | `next_question` | Go to the next question |
 | server → host | `quiz_finished` | There are no more questions; the host then sends `end_game` |
 | host → server | `end_game` | Save results and close the room |
@@ -160,9 +161,20 @@ All messages are JSON objects with an `event` field.
 
 `token` is optional (guests have none). `player_id` is only sent when reconnecting.
 
+## Questions without a timer
+
+Each quiz has a **Use a timer** switch (`Quiz.use_timer`), and each question has a time limit (`Question.time_limit_seconds`). A question runs **without a timer** when the quiz's switch is off or the question's time limit is "No timer" (`null`). For such a question:
+
+- The projector shows no countdown ring. The student screen shows no timer bar.
+- It stays open until everyone still connected has answered, or the professor clicks **Show Results**.
+- The results screen waits for **Next Question** instead of counting down.
+
+The server sends `time_limit: null` in `show_question` for these questions and `auto_advance: false` in the `leaderboard` event. Timed questions in the same quiz behave as usual.
+
 ## Scoring and the timer
 
 - A correct answer is worth **500 points plus up to 500 for speed**: `500 + 500 × (time left ÷ time limit)`. A wrong or missing answer scores 0.
+- On a question with **no timer**, the speed bonus is the full 500 for an answer within 5 seconds of the question opening. It then fades evenly to 0 at 60 seconds. Late answers still count, for 500 points.
 - **The server keeps the clock.** It records when each question starts and works out the time left itself when an answer arrives. Anything the browser says about time is ignored, so a student can't claim a bigger speed bonus.
 - An answer that arrives more than 1 second after the time limit is dropped. The 1 second allows for network lag.
 - Each student can answer each question once. An answer that isn't one of the four options is ignored.
@@ -234,6 +246,7 @@ erDiagram
         int id
         string title
         int owner_id
+        bool use_timer
     }
     Question {
         int id

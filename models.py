@@ -20,7 +20,9 @@ class Quiz(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
-    
+    # Off: no question in the quiz is timed; the professor moves the game along by hand
+    use_timer = Column(Boolean, default=True, nullable=False)
+
     owner = relationship("User")
     questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
 
@@ -36,7 +38,9 @@ class Question(Base):
     option_yellow = Column(String)
     option_green = Column(String)
     correct_option = Column(String)
-    time_limit_seconds = Column(Integer, default=15)
+    # NULL means no timer: the question stays open until everyone answers or the professor closes it.
+    # No column default here: SQLAlchemy would swap an explicit None for it. The API schemas default to 15.
+    time_limit_seconds = Column(Integer, nullable=True)
     
     # NEW: Store the explanation for why the answer is correct
     explanation = Column(String, nullable=True)

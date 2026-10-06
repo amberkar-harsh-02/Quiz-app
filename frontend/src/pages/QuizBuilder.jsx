@@ -17,6 +17,8 @@ const emptyQuestion = () => ({
 export default function QuizBuilder() {
   const { quizId } = useParams();
   const [title, setTitle] = useState('');
+  // Off: no question is timed and the professor moves the game along
+  const [useTimer, setUseTimer] = useState(true);
   const [questions, setQuestions] = useState(() => [emptyQuestion()]);
   const [isLoading, setIsLoading] = useState(Boolean(quizId));
   const [isSaving, setIsSaving] = useState(false);
@@ -33,6 +35,7 @@ export default function QuizBuilder() {
     apiFetch(`/quizzes/${quizId}`)
       .then((quiz) => {
         setTitle(quiz.title);
+        setUseTimer(quiz.use_timer ?? true);
         setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '' })));
       })
       .catch((err) => setError(`Couldn't load this quiz: ${err.message}`))
@@ -68,6 +71,7 @@ export default function QuizBuilder() {
 
     const payload = {
       title,
+      use_timer: useTimer,
       questions: questions.map((q) => Object.fromEntries(QUESTION_FIELDS.map((f) => [f, q[f]]))),
     };
     const editing = quizId && !asNewQuiz;
@@ -124,6 +128,27 @@ export default function QuizBuilder() {
             className={`${inputClass} text-2xl font-bold`}
           />
         </Field>
+
+        <div className="mb-8 flex items-start gap-4 rounded-panel border border-line bg-white p-4">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useTimer}
+            aria-labelledby="use-timer-label"
+            onClick={() => setUseTimer(!useTimer)}
+            className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${useTimer ? 'bg-brand' : 'bg-line'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${useTimer ? 'translate-x-5' : ''}`} />
+          </button>
+          <div>
+            <p id="use-timer-label" className="font-bold">Use a timer</p>
+            <p className="text-sm text-muted">
+              {useTimer
+                ? 'Each question closes when its time runs out, and results move on by themselves. Pick "No timer" on a question to run just that one yourself.'
+                : 'No timers in this quiz. Questions stay open until everyone answers or you show the results, and you choose when to go to the next question.'}
+            </p>
+          </div>
+        </div>
 
         <ol className="space-y-6">
           {questions.map((q, idx) => (
@@ -192,12 +217,15 @@ export default function QuizBuilder() {
                 <label htmlFor={`time_${q.key}`} className="text-sm font-bold">Time limit</label>
                 <select
                   id={`time_${q.key}`}
-                  value={q.time_limit_seconds}
-                  onChange={(e) => updateQuestion(idx, 'time_limit_seconds', parseInt(e.target.value))}
-                  className="rounded-chip border border-line bg-white px-3 py-1.5 font-bold hover:border-muted"
+                  value={useTimer ? (q.time_limit_seconds ?? '') : ''}
+                  disabled={!useTimer}
+                  onChange={(e) => updateQuestion(idx, 'time_limit_seconds', e.target.value === '' ? null : parseInt(e.target.value))}
+                  className="rounded-chip border border-line bg-white px-3 py-1.5 font-bold hover:border-muted disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <option value="">No timer</option>
                   {[10, 15, 20, 30, 60, 90, 120].map((s) => <option key={s} value={s}>{s} seconds</option>)}
                 </select>
+                {!useTimer && <span className="text-sm text-muted">Timer is off for this quiz</span>}
               </div>
             </Panel>
           ))}

@@ -392,3 +392,64 @@ def test_reconnect_after_question_closed_gets_result(client, quiz, professor):
     finally:
         s.__exit__(None, None, None)
         host.__exit__(None, None, None)
+
+
+# --- questions without a timer ---
+
+def test_speed_bonus_without_timer_fades_over_a_minute():
+    assert main.speed_bonus(None, 0) == 500
+    assert main.speed_bonus(None, 5) == 500
+    assert main.speed_bonus(None, 32.5) == 250
+    assert main.speed_bonus(None, 300) == 0      # very late answers still count, just without a bonus
+    assert main.speed_bonus(20, 0) == 500
+    assert main.speed_bonus(20, 30) is None      # past a timed question's deadline
+
+
+def test_untimed_question_has_no_deadline_and_waits_for_professor(client, db, professor):
+    quiz = make_quiz(db, professor, "Discussion", questions=[
+        question_data(text="Open", correct="blue", time_limit=None),
+        question_data(text="Timed", correct="red", time_limit=20),
+    ])
+    host, s, code, pid = start_with_one_student(client, quiz, professor)
+    try:
+        room = manager.active_rooms[code]
+        assert room["questions"][0]["time_limit"] is None
+
+        # Well past any normal time limit, the answer still counts (with no speed bonus)
+        room["question_started_at"] = time.monotonic() - 300
+        s.send_json({"event": "submit_answer", "selected_option": "blue"})
+        assert recv_event(host, "answer_received")["answers_submitted"] == 1
+        # The host page closes the question once everyone has answered; here the test does it
+        host.send_json({"event": "show_leaderboard"})
+        result = recv_event(s, "answer_result")
+        assert result["points_earned"] == 500
+        assert recv_event(host, "leaderboard")["auto_advance"] is False
+
+        host.send_json({"event": "next_question"})
+        assert recv_event(s, "show_question")["question"]["time_limit"] == 20
+        host.send_json({"event": "time_up"})
+        assert recv_event(host, "leaderboard")["auto_advance"] is True
+        end_game(host, s)
+    finally:
+        s.__exit__(None, None, None)
+        host.__exit__(None, None, None)
+
+
+def test_quiz_with_timer_off_has_no_timed_questions(client, db, professor):
+    quiz = make_quiz(db, professor, "No timers", use_timer=False, questions=[question_data(time_limit=20)])
+    host, s, code, pid = start_with_one_student(client, quiz, professor)
+    try:
+        assert manager.active_rooms[code]["questions"][0]["time_limit"] is None
+
+        # A reconnecting student gets no countdown either
+        s.__exit__(None, None, None)
+        recv_event(host, "player_left")
+        s = client.websocket_connect(f"/ws/student/{code}?player_id={pid}").__enter__()
+        s.receive_json()
+        question = recv_event(s, "show_question")["question"]
+        assert question["time_limit"] is None
+        assert "time_remaining" not in question
+        end_game(host, s)
+    finally:
+        s.__exit__(None, None, None)
+        host.__exit__(None, None, None)

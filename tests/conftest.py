@@ -74,8 +74,8 @@ def auth_header(user):
     return {"Authorization": f"Bearer {token}"}
 
 
-def make_quiz(db, owner, title="Sample Quiz", questions=None):
-    quiz = models.Quiz(title=title, owner_id=owner.id)
+def make_quiz(db, owner, title="Sample Quiz", questions=None, use_timer=True):
+    quiz = models.Quiz(title=title, owner_id=owner.id, use_timer=use_timer)
     db.add(quiz)
     db.commit()
     db.refresh(quiz)
