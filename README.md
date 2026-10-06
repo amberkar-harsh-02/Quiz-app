@@ -1,5 +1,8 @@
 # Quiz App – CST 315
 
+[![CI](https://github.com/amberkar-harsh-02/cst315-kahoot/actions/workflows/ci.yml/badge.svg)](https://github.com/amberkar-harsh-02/cst315-kahoot/actions/workflows/ci.yml)
+[![Deploy](https://github.com/amberkar-harsh-02/cst315-kahoot/actions/workflows/deploy.yml/badge.svg)](https://github.com/amberkar-harsh-02/cst315-kahoot/actions/workflows/deploy.yml)
+
 A live classroom quiz for CST 315 (Introduction to Cybersecurity). The professor runs a game on the projector, and students answer from their own browser with a room PIN.
 
 ![Question on the projector](docs/screenshots/host-question.png)
@@ -12,7 +15,7 @@ For how the app works inside (game flow, WebSocket events, scoring, data model),
 
 ## Requirements
 
-- Python 3.11 or newer
+- Python 3.10 or newer
 - Node.js 20.19 or newer (needed by Vite 8)
 
 ## 1. Start the backend
@@ -122,6 +125,34 @@ pytest -q
 ```
 
 The tests use an in-memory database and never touch `kahoot.db`. For the frontend, run `npm run lint` and `npm run build` inside `frontend/`.
+
+## Deployment
+
+The live app runs at `https://secotterlab.org/quiz-app/`. GitHub Actions tests every change and deploys `main`:
+
+| Workflow | Runs on | What it does |
+| --- | --- | --- |
+| **CI** (`.github/workflows/ci.yml`) | Every push to other branches, and every pull request | Backend tests on Python 3.10 (same as the server), frontend lint and build |
+| **Deploy** (`.github/workflows/deploy.yml`) | Every push to `main`, or **Actions → Deploy → Run workflow** | Runs CI first. If it passes: builds the frontend, uploads it and the backend files to the server, restarts the `quiz-app` service and checks the site responds |
+
+Deploying restarts the backend, which ends any game in progress. Merge to `main` between classes.
+
+**On the server** (`ubuntu@15.204.118.48`):
+
+- **Backend:** `~/quiz-app`, with its own `venv` and `.env`, run by the systemd service `quiz-app` on `127.0.0.1:8000`.
+- **Frontend:** `/var/www/secotterlab.org/quiz-app`.
+- **Caddy:** forwards `/quiz-app/api/*` to the backend and serves everything else under `/quiz-app/` from that folder.
+- **Never touched by deploys:** `.env`, `kahoot.db` and the server's `venv`.
+
+**GitHub settings** (Settings → Secrets and variables → Actions; environment `production`):
+
+| Name | Type | Value |
+| --- | --- | --- |
+| `DEPLOY_HOST` | Secret | Server IP |
+| `DEPLOY_USER` | Secret | `ubuntu` |
+| `DEPLOY_SSH_KEY` | Secret | Private half of the deploy-only SSH key |
+| `DEPLOY_KNOWN_HOSTS` | Secret | Output of `ssh-keyscan <server IP>` |
+| `VITE_GOOGLE_CLIENT_ID` | Variable | Google OAuth client ID (public; it ships in the page) |
 
 ## Troubleshooting
 

@@ -1,0 +1,89 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # "Run workflow" button in the Actions tab, for redeploying without a new commit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once; a newer push waits for the current one to finish
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to secotterlab.org/quiz-app
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      APP_DIR: ~/quiz-app
+      WEB_DIR: /var/www/secotterlab.org/quiz-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # vite.config.js builds for the /quiz-app/ path
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n' \
+            "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+
+      # Only the backend source files: .env, kahoot.db and venv/ on the server are never touched
+      - name: Upload backend
+        run: |
+          rsync -az main.py game_manager.py models.py schemas.py database.py requirements.txt \
+            "deploy:$APP_DIR/"
+
+      # --delete is limited to the quiz-app web folder and clears old hashed assets
+      - name: Upload frontend
+        run: rsync -az --delete frontend/dist/ "deploy:$WEB_DIR/"
+
+      - name: Install dependencies and restart the backend
+        run: |
+          ssh deploy "cd $APP_DIR && venv/bin/pip install -q -r requirements.txt && sudo systemctl restart quiz-app"
+
+      - name: Health check
+        run: |
+          sleep 3
+          # The API answers 401 "Not authenticated" when it is up
+          api_status=$(ssh deploy "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/quizzes/")
+          echo "API: $api_status"
+          test "$api_status" = "401"
+          site_status=$(curl -s -o /dev/null -w '%{http_code}' https://secotterlab.org/quiz-app/)
+          echo "Site: $site_status"
+          test "$site_status" = "200"
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
