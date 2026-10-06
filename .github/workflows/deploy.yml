@@ -53,11 +53,24 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          # tr strips Windows line endings that come along when a key is copied on Windows
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+
+          # Fail early with a clear message instead of a bare "Permission denied"
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub 2>/dev/null; then
+            echo "::error::DEPLOY_SSH_KEY is empty or not a valid private key (it should start with -----BEGIN OPENSSH PRIVATE KEY-----)"
+            exit 1
+          fi
+          # The fingerprint is public information; compare it with: ssh-keygen -lf quiz-app-deploy.pub
+          echo "Deploy key fingerprint: $(ssh-keygen -lf ~/.ssh/deploy_key.pub)"
+          echo "DEPLOY_USER length: ${#DEPLOY_USER}, DEPLOY_HOST length: ${#DEPLOY_HOST}"
           printf 'Host deploy\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n' \
             "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+
+      - name: Check SSH login
+        run: ssh -o BatchMode=yes deploy 'echo "Logged in to $(hostname) as $(whoami)"'
 
       # Only the backend source files: .env, kahoot.db and venv/ on the server are never touched
       - name: Upload backend
