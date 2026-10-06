@@ -76,6 +76,14 @@ def test_builder_saves_timer_settings(client, db, professor):
 def test_builder_defaults_to_timer_on(client, professor):
     res = client.post("/quizzes/builder", json={"title": "T", "questions": [builder_question()]}, headers=auth_header(professor))
     assert res.json()["use_timer"] is True
+    assert res.json()["auto_advance_results"] is True
+
+
+def test_builder_saves_results_pacing(client, professor):
+    payload = {"title": "Paced", "auto_advance_results": False, "questions": [builder_question()]}
+    res = client.post("/quizzes/builder", json=payload, headers=auth_header(professor))
+    assert res.status_code == 200
+    assert res.json()["auto_advance_results"] is False
 
 
 def test_upload_accepts_untimed_questions(client, professor):

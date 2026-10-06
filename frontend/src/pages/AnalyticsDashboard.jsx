@@ -125,7 +125,7 @@ export default function AnalyticsDashboard() {
                         <h3 className="font-bold"><span className="mr-2 font-mono text-muted">{idx + 1}.</span>{q.text}</h3>
                         <span className={`shrink-0 font-bold ${accuracyTone(q.accuracy)}`}>{q.accuracy}% correct</span>
                       </div>
-                      <SpreadBars spread={q.spread} />
+                      <SpreadBars spread={q.spread} showPercent />
                     </li>
                   ))}
                 </Panel>

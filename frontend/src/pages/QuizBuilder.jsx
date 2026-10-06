@@ -14,11 +14,34 @@ const emptyQuestion = () => ({
   correct_option: 'red', time_limit_seconds: 15, explanation: '',
 });
 
+function SwitchRow({ id, label, checked, onChange, children }) {
+  return (
+    <div className="flex items-start gap-4 p-4">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-labelledby={`${id}-label`}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? 'bg-brand' : 'bg-line'}`}
+      >
+        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${checked ? 'translate-x-5' : ''}`} />
+      </button>
+      <div>
+        <p id={`${id}-label`} className="font-bold">{label}</p>
+        <p className="text-sm text-muted">{children}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function QuizBuilder() {
   const { quizId } = useParams();
   const [title, setTitle] = useState('');
   // Off: no question is timed and the professor moves the game along
   const [useTimer, setUseTimer] = useState(true);
+  // Off: after every question the results wait for the professor's "Next Question"
+  const [autoAdvance, setAutoAdvance] = useState(true);
   const [questions, setQuestions] = useState(() => [emptyQuestion()]);
   const [isLoading, setIsLoading] = useState(Boolean(quizId));
   const [isSaving, setIsSaving] = useState(false);
@@ -36,6 +59,7 @@ export default function QuizBuilder() {
       .then((quiz) => {
         setTitle(quiz.title);
         setUseTimer(quiz.use_timer ?? true);
+        setAutoAdvance(quiz.auto_advance_results ?? true);
         setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '' })));
       })
       .catch((err) => setError(`Couldn't load this quiz: ${err.message}`))
@@ -72,6 +96,7 @@ export default function QuizBuilder() {
     const payload = {
       title,
       use_timer: useTimer,
+      auto_advance_results: autoAdvance,
       questions: questions.map((q) => Object.fromEntries(QUESTION_FIELDS.map((f) => [f, q[f]]))),
     };
     const editing = quizId && !asNewQuiz;
@@ -129,26 +154,18 @@ export default function QuizBuilder() {
           />
         </Field>
 
-        <div className="mb-8 flex items-start gap-4 rounded-panel border border-line bg-white p-4">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={useTimer}
-            aria-labelledby="use-timer-label"
-            onClick={() => setUseTimer(!useTimer)}
-            className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${useTimer ? 'bg-brand' : 'bg-line'}`}
-          >
-            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${useTimer ? 'translate-x-5' : ''}`} />
-          </button>
-          <div>
-            <p id="use-timer-label" className="font-bold">Use a timer</p>
-            <p className="text-sm text-muted">
-              {useTimer
-                ? 'Each question closes when its time runs out, and results move on by themselves. Pick "No timer" on a question to run just that one yourself.'
-                : 'No timers in this quiz. Questions stay open until everyone answers or you show the results, and you choose when to go to the next question.'}
-            </p>
-          </div>
-        </div>
+        <Panel className="mb-8 divide-y divide-line">
+          <SwitchRow id="use-timer" label="Use a timer" checked={useTimer} onChange={setUseTimer}>
+            {useTimer
+              ? 'Each question closes when its time runs out. Pick "No timer" on a question to run just that one yourself.'
+              : 'No timers in this quiz. Questions stay open until everyone answers or you show the results.'}
+          </SwitchRow>
+          <SwitchRow id="auto-advance" label="Move on from results automatically" checked={autoAdvance} onChange={setAutoAdvance}>
+            {autoAdvance
+              ? 'After a timed question, results show for 5–10 seconds, then the next question starts. Questions with no timer always wait for you.'
+              : 'Results stay up after every question until you click Next Question.'}
+          </SwitchRow>
+        </Panel>
 
         <ol className="space-y-6">
           {questions.map((q, idx) => (

@@ -77,7 +77,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 4. **Join as students.** Open `http://localhost:5173` in other tabs, enter the PIN and a nickname under **Play as guest**. Students with a `@csumb.edu` account can sign in instead, which saves their results for review.
 5. **Start.** Click **Start Game**. Each question closes when the timer runs out or everyone has answered. The projector then shows the answer spread, the explanation and the top 3.
 
-   **Running it yourself:** in the quiz editor, turn off **Use a timer** for the whole quiz, or set a question's time limit to **No timer**. Those questions stay open until everyone has answered or you click **Show Results**. Their results then wait for you to click **Next Question**.
+   **Running it yourself:** in the quiz editor, turn off **Use a timer** for the whole quiz, or set a question's time limit to **No timer**. Those questions stay open until everyone has answered or you click **Show Results**. Their results then wait for you to click **Next Question**. To control the pace after every question, turn off **Move on from results automatically** as well.
 6. **Review.** After the last question, results are saved. Open **View Analytics** for per-question and per-student results.
 
 | Start page | My Quizzes | Quiz builder |
@@ -94,6 +94,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 {
   "title": "Week 3 – Cryptography",
   "use_timer": true,
+  "auto_advance_results": true,
   "questions": [
     {
       "text": "Which of these is a symmetric cipher?",
@@ -113,6 +114,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 | --- | --- | --- |
 | `title` | Yes | Quiz name shown on the dashboard. |
 | `use_timer` | No | `false` turns off timers for the whole quiz. Default `true`. |
+| `auto_advance_results` | No | `false` makes the results screen after every question wait for **Next Question**. Default `true`. |
 | `text` | Yes | The question. |
 | `option_red` … `option_green` | Yes | The four answers, shown to players as **A, B, C, D** in that order. |
 | `correct_option` | Yes | `red`, `blue`, `yellow` or `green` (A, B, C or D). |

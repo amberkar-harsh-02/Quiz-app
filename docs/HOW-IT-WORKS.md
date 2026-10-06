@@ -8,7 +8,7 @@ This document explains how the app is put together: who does what, how a live ga
 - [Roles and sign-in](#roles-and-sign-in)
 - [A game from start to finish](#a-game-from-start-to-finish)
 - [WebSocket messages](#websocket-messages)
-- [Questions without a timer](#questions-without-a-timer)
+- [Timers and pacing](#timers-and-pacing)
 - [Scoring and the timer](#scoring-and-the-timer)
 - [Reconnecting](#reconnecting)
 - [What each side can see](#what-each-side-can-see)
@@ -83,7 +83,7 @@ A student taps a letter and the answer locks in. The projector's answer count go
 
 ### 3. Results for that question
 
-The question closes when the timer hits zero, when everyone still connected has answered, or when the professor clicks **Skip Timer**. A question with no timer (see [Questions without a timer](#questions-without-a-timer)) has no countdown, so it closes only when everyone has answered or the professor clicks **Show Results**. Then:
+The question closes when the timer hits zero, when everyone still connected has answered, or when the professor clicks **Skip Timer**. A question with no timer (see [Timers and pacing](#timers-and-pacing)) has no countdown, so it closes only when everyone has answered or the professor clicks **Show Results**. Then:
 
 - The **projector** shows how many picked each answer, marks the correct one, shows the explanation and the top 3.
 - Each **student** sees their own result: correct or incorrect, points earned and current place.
@@ -94,7 +94,11 @@ The question closes when the timer hits zero, when everyone still connected has 
 | --- | --- |
 | ![Correct](screenshots/student-correct.png) | ![Incorrect](screenshots/student-incorrect.png) |
 
-After a few seconds (10 when there's an explanation, otherwise 5) the next question starts. The professor can also click **Skip Delay** or **End Game Early**. After a question with no timer, the results stay up until the professor clicks **Next Question**.
+The results screen is laid out like a question in Analytics:
+- **Left:** the accuracy, a bar per answer with its count and share, and a "No answer" row.
+- **Right:** the explanation and the top 5.
+
+After a timed question, the next question starts after a few seconds (10 when there's an explanation, otherwise 5). The professor can also click **Skip Delay** or **End Game Early**. After a question with no timer, or in a quiz with **Move on from results automatically** turned off, the results stay up until the professor clicks **Next Question**.
 
 ### 4. Game over
 
@@ -141,7 +145,7 @@ All messages are JSON objects with an `event` field.
 | server → host | `show_question` | `text`, `options` (the four answer texts), `time_limit`, `index`, `total` |
 | server → host | `answer_received` | A student answered. `answers_submitted`, `total_players` |
 | host → server | `time_up` / `show_leaderboard` | The timer ended, or the professor clicked Skip Timer |
-| server → host | `leaderboard` | `top_players`, `correct_option`, `spread`, `explanation`, `is_last_question`, `auto_advance` (false after a question with no timer) |
+| server → host | `leaderboard` | `top_players`, `correct_option`, `spread`, `explanation`, `is_last_question`, `auto_advance` (whether to count down to the next question), `no_answer` (students who didn't answer) |
 | host → server | `next_question` | Go to the next question |
 | server → host | `quiz_finished` | There are no more questions; the host then sends `end_game` |
 | host → server | `end_game` | Save results and close the room |
@@ -161,15 +165,24 @@ All messages are JSON objects with an `event` field.
 
 `token` is optional (guests have none). `player_id` is only sent when reconnecting.
 
-## Questions without a timer
+## Timers and pacing
 
-Each quiz has a **Use a timer** switch (`Quiz.use_timer`), and each question has a time limit (`Question.time_limit_seconds`). A question runs **without a timer** when the quiz's switch is off or the question's time limit is "No timer" (`null`). For such a question:
+Two quiz settings and one question setting decide how a game moves along. All are set in the quiz editor.
+
+| Setting | Where | Effect |
+| --- | --- | --- |
+| **Use a timer** (`Quiz.use_timer`) | Quiz | Off: no question in the quiz has a countdown |
+| **Time limit** (`Question.time_limit_seconds`) | Question | 5–120 seconds, or **No timer** (`null`) |
+| **Move on from results automatically** (`Quiz.auto_advance_results`) | Quiz | Off: the results screen after every question waits for the professor |
+
+A question runs **without a timer** when the quiz's timer is off or the question is set to "No timer". For such a question:
 
 - The projector shows no countdown ring. The student screen shows no timer bar.
 - It stays open until everyone still connected has answered, or the professor clicks **Show Results**.
-- The results screen waits for **Next Question** instead of counting down.
 
-The server sends `time_limit: null` in `show_question` for these questions and `auto_advance: false` in the `leaderboard` event. Timed questions in the same quiz behave as usual.
+The results screen counts down to the next question **only** after a timed question in a quiz with automatic results on. Otherwise it waits for **Next Question**.
+
+The server sends `time_limit: null` in `show_question` for untimed questions, and `auto_advance` in the `leaderboard` event to tell the projector whether to count down.
 
 ## Scoring and the timer
 
@@ -247,6 +260,7 @@ erDiagram
         string title
         int owner_id
         bool use_timer
+        bool auto_advance_results
     }
     Question {
         int id

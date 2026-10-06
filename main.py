@@ -204,6 +204,7 @@ def save_quiz(db: Session, quiz: models.Quiz, payload: schemas.FullQuizPayload) 
     """Writes the title and replaces all questions in a single commit."""
     quiz.title = payload.title
     quiz.use_timer = payload.use_timer
+    quiz.auto_advance_results = payload.auto_advance_results
     quiz.questions = [models.Question(**q.model_dump()) for q in payload.questions]
     db.add(quiz)
     db.commit()
@@ -526,8 +527,10 @@ async def show_results(room: dict):
         "explanation": q["explanation"],
         "spread": spread,
         "is_last_question": index == len(room["questions"]) - 1,
-        # Results after an untimed question wait for the professor instead of counting down
-        "auto_advance": q["time_limit"] is not None,
+        # Results count down to the next question only after a timed question in a quiz that allows it;
+        # otherwise they wait for the professor
+        "auto_advance": room.get("auto_advance_results", True) and q["time_limit"] is not None,
+        "no_answer": sum(1 for s in room["students"].values() if s.get("last_answered_index") != index),
     })
 
     for s in room["students"].values():
@@ -572,12 +575,14 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                 "explanation": q.explanation or ""
             } for q in quiz.questions
         ]
+        auto_advance_results = quiz.auto_advance_results
     finally:
         db.close()
 
     # 2. Token is valid and the professor owns this quiz, accept connection
     await websocket.accept()
     room_code = manager.create_room(quiz_id, websocket)
+    manager.active_rooms[room_code]["auto_advance_results"] = auto_advance_results
     await websocket.send_json({"event": "room_created", "room_code": room_code})
 
     try:

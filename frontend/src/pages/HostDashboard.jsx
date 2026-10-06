@@ -138,7 +138,7 @@ export default function HostDashboard() {
         setAnswersCount(data.answers_submitted);
         setTotalPlayers(data.total_players);
       } else if (data.event === 'leaderboard') {
-        setLeaderboard(data.top_players.slice(0, 3));
+        setLeaderboard(data.top_players);
         setReveal(data);
         // Leave time to read the explanation out
         // After an untimed question the results wait for the professor (null stops the countdown)

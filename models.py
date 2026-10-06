@@ -22,6 +22,8 @@ class Quiz(Base):
     owner_id = Column(Integer, ForeignKey("users.id"))
     # Off: no question in the quiz is timed; the professor moves the game along by hand
     use_timer = Column(Boolean, default=True, nullable=False)
+    # Off: the results screen after every question waits for the professor's "Next Question"
+    auto_advance_results = Column(Boolean, default=True, nullable=False)
 
     owner = relationship("User")
     questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")

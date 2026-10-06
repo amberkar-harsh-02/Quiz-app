@@ -40,6 +40,7 @@ class Question(QuestionBase):
 class QuizBase(BaseModel):
     title: str
     use_timer: bool = True
+    auto_advance_results: bool = True
 
 class QuizCreate(QuizBase):
     pass
@@ -68,6 +69,8 @@ class FullQuizPayload(BaseModel):
     title: str = Field(min_length=1)
     # false = no question in the quiz is timed, whatever its own time limit says
     use_timer: bool = True
+    # false = after every question the results wait for the professor's "Next Question"
+    auto_advance_results: bool = True
     questions: List[QuestionBuilderItem] = Field(min_length=1)
 
 class GoogleAuthRequest(BaseModel):

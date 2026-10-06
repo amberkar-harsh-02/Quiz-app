@@ -31,3 +31,5 @@ def add_missing_columns(bind):
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(quizzes)"))}
         if columns and "use_timer" not in columns:
             conn.execute(text("ALTER TABLE quizzes ADD COLUMN use_timer BOOLEAN NOT NULL DEFAULT 1"))
+        if columns and "auto_advance_results" not in columns:
+            conn.execute(text("ALTER TABLE quizzes ADD COLUMN auto_advance_results BOOLEAN NOT NULL DEFAULT 1"))

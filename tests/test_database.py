@@ -30,5 +30,5 @@ def test_adds_use_timer_column_to_old_quizzes_and_defaults_to_on():
     add_missing_columns(engine)
 
     with engine.connect() as conn:
-        rows = conn.execute(text("SELECT title, use_timer FROM quizzes")).all()
-    assert rows == [("Old quiz", 1)]
+        rows = conn.execute(text("SELECT title, use_timer, auto_advance_results FROM quizzes")).all()
+    assert rows == [("Old quiz", 1, 1)]

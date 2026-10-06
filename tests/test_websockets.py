@@ -453,3 +453,36 @@ def test_quiz_with_timer_off_has_no_timed_questions(client, db, professor):
     finally:
         s.__exit__(None, None, None)
         host.__exit__(None, None, None)
+
+
+# --- results pacing ---
+
+def test_results_wait_for_professor_when_quiz_turns_auto_advance_off(client, db, professor):
+    quiz = make_quiz(db, professor, "Paced", auto_advance_results=False, questions=[question_data(time_limit=20)])
+    host, s, code, pid = start_with_one_student(client, quiz, professor)
+    try:
+        host.send_json({"event": "time_up"})
+        assert recv_event(host, "leaderboard")["auto_advance"] is False
+        end_game(host, s)
+    finally:
+        s.__exit__(None, None, None)
+        host.__exit__(None, None, None)
+
+
+def test_results_report_students_who_did_not_answer(client, quiz, professor):
+    host, alice, code, _ = start_with_one_student(client, quiz, professor)
+    try:
+        with client.websocket_connect(f"/ws/student/{code}?student_name=Bob") as bob:
+            bob.receive_json()
+            recv_event(host, "player_joined")
+            alice.send_json({"event": "submit_answer", "selected_option": "blue"})
+            recv_event(host, "answer_received")
+
+            host.send_json({"event": "time_up"})
+            board = recv_event(host, "leaderboard")
+            assert board["no_answer"] == 1
+            assert board["auto_advance"] is True      # timed question, default setting
+            end_game(host, alice, bob)
+    finally:
+        alice.__exit__(None, None, None)
+        host.__exit__(None, None, None)
