@@ -175,10 +175,12 @@ def test_full_game_scores_and_persists_results(client, db, quiz, professor, stud
                 "time_limit": 20,
                 "index": 0,
                 "total": 2,
+                "image_url": None,
+                "image_alt": "",
             }
             # Students get neither the correct answer nor the answer texts (those are on the projector)
             assert recv_event(alice, "show_question")["question"] == {
-                "text": "Q1", "time_limit": 20, "index": 0, "total": 2,
+                "text": "Q1", "time_limit": 20, "index": 0, "total": 2, "image_url": None, "image_alt": "",
             }
             recv_event(bob, "show_question")
 
@@ -396,13 +398,24 @@ def test_reconnect_after_question_closed_gets_result(client, quiz, professor):
 
 # --- questions without a timer ---
 
-def test_speed_bonus_without_timer_fades_over_a_minute():
-    assert main.speed_bonus(None, 0) == 500
-    assert main.speed_bonus(None, 5) == 500
-    assert main.speed_bonus(None, 32.5) == 250
-    assert main.speed_bonus(None, 300) == 0      # very late answers still count, just without a bonus
-    assert main.speed_bonus(20, 0) == 500
-    assert main.speed_bonus(20, 30) is None      # past a timed question's deadline
+def test_speed_without_timer_fades_over_a_minute():
+    assert main.speed_fraction(None, 0) == 1
+    assert main.speed_fraction(None, 5) == 1
+    assert main.speed_fraction(None, 32.5) == 0.5
+    assert main.speed_fraction(None, 300) == 0      # very late answers still count, just without a bonus
+    assert main.speed_fraction(20, 0) == 1
+    assert main.speed_fraction(20, 10) == 0.5
+    assert main.speed_fraction(20, 30) is None      # past a timed question's deadline
+
+
+@pytest.mark.parametrize("weight,speed,points", [
+    (50, 1, 1000), (50, 0.5, 750), (50, 0, 500),   # the original scoring
+    (0, 1, 1000), (0, 0, 1000),                    # correct answers only
+    (100, 1, 1000), (100, 0.5, 500), (100, 0, 0),  # all about speed
+    (30, 0.5, 850),
+])
+def test_points_for_correct_answer_follow_speed_weight(weight, speed, points):
+    assert main.points_for_correct(speed, weight) == points
 
 
 def test_untimed_question_has_no_deadline_and_waits_for_professor(client, db, professor):
@@ -486,3 +499,48 @@ def test_results_report_students_who_did_not_answer(client, quiz, professor):
     finally:
         alice.__exit__(None, None, None)
         host.__exit__(None, None, None)
+
+
+# --- scoring weight ---
+
+def test_correct_only_quiz_gives_full_points_however_slow(client, db, professor):
+    quiz = make_quiz(db, professor, "Correct only", speed_weight=0, questions=[question_data(time_limit=20)])
+    host, s, code, pid = start_with_one_student(client, quiz, professor)
+    try:
+        manager.active_rooms[code]["question_started_at"] = time.monotonic() - 19.5   # just before the deadline
+        s.send_json({"event": "submit_answer", "selected_option": "blue"})
+        recv_event(host, "answer_received")
+        host.send_json({"event": "time_up"})
+        assert recv_event(s, "answer_result")["points_earned"] == 1000
+        end_game(host, s)
+    finally:
+        s.__exit__(None, None, None)
+        host.__exit__(None, None, None)
+
+
+def test_room_created_reports_scoring_weight(client, db, professor):
+    quiz = make_quiz(db, professor, "Speedy", speed_weight=70, questions=[question_data()])
+    with client.websocket_connect(f"/ws/host/{quiz.id}?token={token_for(professor)}") as host:
+        created = host.receive_json()
+        assert created["speed_weight"] == 70
+        end_game(host)
+
+
+# --- question images ---
+
+def test_question_image_reaches_host_and_students(client, db, professor):
+    db.add(models.Image(id="a" * 32, owner_id=professor.id, content_type="image/png", data=b"x"))
+    q = question_data(text="Look at the diagram")
+    q.update(image_id="a" * 32, image_alt="Network diagram")
+    quiz = make_quiz(db, professor, "Pictures", questions=[q])
+    with client.websocket_connect(f"/ws/host/{quiz.id}?token={token_for(professor)}") as host:
+        code = host.receive_json()["room_code"]
+        with client.websocket_connect(f"/ws/student/{code}?student_name=Alice") as s:
+            s.receive_json()
+            recv_event(host, "player_joined")
+            host.send_json({"event": "start_game"})
+            for ws in (host, s):
+                question = recv_event(ws, "show_question")["question"]
+                assert question["image_url"] == "/images/" + "a" * 32
+                assert question["image_alt"] == "Network diagram"
+            end_game(host, s)

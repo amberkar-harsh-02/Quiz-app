@@ -1,18 +1,129 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { apiFetch, readToken } from '../api';
+import { apiFetch, assetUrl, readToken } from '../api';
 import { ANSWERS } from '../answers';
 import AnswerKey from '../components/AnswerKey';
 import { Alert, Button, Field, Panel, Wordmark, inputClass } from '../components/ui';
 
-const QUESTION_FIELDS = ['text', 'option_red', 'option_blue', 'option_yellow', 'option_green', 'correct_option', 'time_limit_seconds', 'explanation'];
+const QUESTION_FIELDS = ['text', 'option_red', 'option_blue', 'option_yellow', 'option_green', 'correct_option', 'time_limit_seconds', 'explanation', 'image_id', 'image_alt'];
+
+const SCORING_PRESETS = [
+  { label: 'Correct answers only', value: 0 },
+  { label: 'Balanced', value: 50 },
+  { label: 'Speed matters', value: 75 },
+];
+
+function scoringSentence(weight) {
+  if (weight === 0) return 'A correct answer is worth 1000 points, however long it takes.';
+  if (weight === 100) return 'A correct answer is worth up to 1000 points, all of it for speed: the faster, the more.';
+  const forSpeed = weight * 10;
+  return `A correct answer is worth up to 1000 points: ${1000 - forSpeed} for being correct, plus up to ${forSpeed} for answering fast.`;
+}
 
 // `key` only identifies the card in React; it is stripped before saving
 const emptyQuestion = () => ({
   key: crypto.randomUUID(),
   text: '', option_red: '', option_blue: '', option_yellow: '', option_green: '',
   correct_option: 'red', time_limit_seconds: 15, explanation: '',
+  image_id: null, image_alt: '',
 });
+
+function ScoringRow({ weight, onChange }) {
+  return (
+    <div className="p-4">
+      <p id="scoring-label" className="font-bold">Scoring</p>
+      <p className="mb-3 text-sm text-muted">{scoringSentence(weight)}</p>
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby="scoring-label">
+        {SCORING_PRESETS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            aria-pressed={weight === preset.value}
+            onClick={() => onChange(preset.value)}
+            className={`rounded-chip border px-3 py-1.5 text-sm font-bold transition-colors ${
+              weight === preset.value ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:border-muted hover:text-ink'
+            }`}
+          >
+            {preset.label}
+          </button>
+        ))}
+        <label className="ml-auto flex items-center gap-3 text-sm text-muted">
+          Speed counts for
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={10}
+            value={weight}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="w-40 accent-[#1F4F8F]"
+          />
+          <span className="w-10 text-right font-mono font-bold text-ink">{weight}%</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// Upload, preview, describe or remove the one image a question can have
+function QuestionImage({ question, number, onChange, onError }) {
+  const [uploading, setUploading] = useState(false);
+
+  const pick = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = null;
+    if (!file) return;
+    const body = new FormData();
+    body.append('file', file);
+    setUploading(true);
+    try {
+      const image = await apiFetch('/images', { method: 'POST', body });
+      onChange({ image_id: image.id });
+    } catch (err) {
+      onError(`Question ${number} image: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (!question.image_id) {
+    return (
+      <div className="mb-5">
+        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-control border border-dashed border-line px-4 py-2 text-sm font-bold text-muted transition-colors hover:border-muted hover:text-ink focus-within:ring-2 focus-within:ring-brand ${uploading ? 'pointer-events-none opacity-60' : ''}`}>
+          <input type="file" accept="image/png,image/jpeg" onChange={pick} className="sr-only" />
+          {uploading ? 'Uploading…' : '+ Add image'}
+          {!uploading && <span className="font-normal">(JPG or PNG, up to 5 MB)</span>}
+        </label>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-5 flex flex-col gap-3 rounded-control border border-line bg-paper p-3 sm:flex-row sm:items-start">
+      <img
+        src={assetUrl(`/images/${question.image_id}`)}
+        alt={question.image_alt || ''}
+        className="max-h-48 w-auto self-start rounded-chip border border-line bg-white object-contain"
+      />
+      <div className="flex flex-grow flex-col gap-2">
+        <Field label="Image description" hint="(read aloud to students using screen readers)" id={`alt_${question.key}`}>
+          <input
+            id={`alt_${question.key}`}
+            type="text"
+            maxLength={300}
+            placeholder="e.g. Network diagram with a firewall between the router and the web server"
+            value={question.image_alt}
+            onChange={(e) => onChange({ image_alt: e.target.value })}
+            className={inputClass}
+          />
+        </Field>
+        <Button variant="ghost" size="sm" onClick={() => onChange({ image_id: null, image_alt: '' })} className="self-start hover:!bg-bad-soft hover:!text-bad">
+          Remove image
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function SwitchRow({ id, label, checked, onChange, children }) {
   return (
@@ -42,6 +153,8 @@ export default function QuizBuilder() {
   const [useTimer, setUseTimer] = useState(true);
   // Off: after every question the results wait for the professor's "Next Question"
   const [autoAdvance, setAutoAdvance] = useState(true);
+  // Share (0-100 %) of a correct answer's points that depends on speed
+  const [speedWeight, setSpeedWeight] = useState(50);
   const [questions, setQuestions] = useState(() => [emptyQuestion()]);
   const [isLoading, setIsLoading] = useState(Boolean(quizId));
   const [isSaving, setIsSaving] = useState(false);
@@ -60,7 +173,8 @@ export default function QuizBuilder() {
         setTitle(quiz.title);
         setUseTimer(quiz.use_timer ?? true);
         setAutoAdvance(quiz.auto_advance_results ?? true);
-        setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '' })));
+        setSpeedWeight(quiz.speed_weight ?? 50);
+        setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '', image_alt: q.image_alt ?? '' })));
       })
       .catch((err) => setError(`Couldn't load this quiz: ${err.message}`))
       .finally(() => setIsLoading(false));
@@ -97,6 +211,7 @@ export default function QuizBuilder() {
       title,
       use_timer: useTimer,
       auto_advance_results: autoAdvance,
+      speed_weight: speedWeight,
       questions: questions.map((q) => Object.fromEntries(QUESTION_FIELDS.map((f) => [f, q[f]]))),
     };
     const editing = quizId && !asNewQuiz;
@@ -165,6 +280,7 @@ export default function QuizBuilder() {
               ? 'After a timed question, results show for 5–10 seconds, then the next question starts. Questions with no timer always wait for you.'
               : 'Results stay up after every question until you click Next Question.'}
           </SwitchRow>
+          <ScoringRow weight={speedWeight} onChange={setSpeedWeight} />
         </Panel>
 
         <ol className="space-y-6">
@@ -186,6 +302,16 @@ export default function QuizBuilder() {
                 value={q.text}
                 onChange={(e) => updateQuestion(idx, 'text', e.target.value)}
                 className={`${inputClass} mb-5 text-lg font-bold`}
+              />
+
+              <QuestionImage
+                question={q}
+                number={idx + 1}
+                onChange={(fields) => {
+                  if (fields.image_id) setError('');   // clears an earlier failed upload's message
+                  setQuestions((qs) => qs.map((item) => (item.key === q.key ? { ...item, ...fields } : item)));
+                }}
+                onError={fail}
               />
 
               <fieldset className="mb-5">

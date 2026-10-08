@@ -1,11 +1,13 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, File, UploadFile
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, File, UploadFile, Response
 import json
+import secrets
 import time
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, SessionLocal, add_missing_columns
 import models, schemas
 from game_manager import manager
+from images import MAX_UPLOAD_BYTES, clean_image
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
@@ -35,6 +37,8 @@ LEGACY_PROFESSOR_EMAILS = email_list("PROFESSOR_EMAILS")
 
 # Answers that arrive this long after the timer ends (network lag) still count, for 0 speed bonus
 ANSWER_GRACE_SECONDS = 1.0
+# A correct answer is worth up to this much; the quiz's speed_weight decides how much of it is for speed
+MAX_POINTS = 1000
 # Questions without a timer still reward speed: full bonus within this many seconds...
 UNTIMED_FULL_BONUS_SECONDS = 5
 # ...fading to no bonus at this many seconds
@@ -305,14 +309,33 @@ def ensure_never_played(quiz: models.Quiz, db: Session, action: str):
             detail=f"This quiz has been played, so it can't be {action}. Duplicate it to make changes."
         )
 
+def image_url(image_id):
+    return f"/images/{image_id}" if image_id else None
+
+def delete_unused_images(db: Session, image_ids: set):
+    """Deletes images no question points at any more. Copies of a quiz share images, so check first."""
+    for image_id in image_ids:
+        if image_id and not db.query(models.Question).filter(models.Question.image_id == image_id).first():
+            db.query(models.Image).filter(models.Image.id == image_id).delete()
+    db.commit()
+
 def save_quiz(db: Session, quiz: models.Quiz, payload: schemas.FullQuizPayload) -> models.Quiz:
     """Writes the title and replaces all questions in a single commit."""
+    wanted = {q.image_id for q in payload.questions if q.image_id}
+    if wanted:
+        owned = {i.id for i in db.query(models.Image.id).filter(models.Image.id.in_(wanted), models.Image.owner_id == quiz.owner_id)}
+        if owned != wanted:
+            raise HTTPException(status_code=400, detail="One of the question images wasn't found. Upload it again.")
+
+    previous_images = {q.image_id for q in quiz.questions if q.image_id} if quiz.id else set()
     quiz.title = payload.title
     quiz.use_timer = payload.use_timer
     quiz.auto_advance_results = payload.auto_advance_results
+    quiz.speed_weight = payload.speed_weight
     quiz.questions = [models.Question(**q.model_dump()) for q in payload.questions]
     db.add(quiz)
     db.commit()
+    delete_unused_images(db, previous_images - wanted)
     db.refresh(quiz)
     return quiz
 
@@ -364,10 +387,48 @@ def delete_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: model
     ensure_never_played(quiz, db, "deleted")
 
     # Questions are removed by the relationship's delete-orphan cascade
+    image_ids = {q.image_id for q in quiz.questions if q.image_id}
     db.delete(quiz)
     db.commit()
+    delete_unused_images(db, image_ids)
 
     return {"detail": "Quiz deleted successfully"}
+
+# --- QUESTION IMAGES ---
+
+@app.post("/images", status_code=201)
+async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Images can be at most 5 MB.")
+    try:
+        data, content_type, width, height = clean_image(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    image = models.Image(
+        id=secrets.token_hex(16), owner_id=current_user.id,
+        content_type=content_type, data=data, width=width, height=height,
+    )
+    db.add(image)
+    db.commit()
+    return {"id": image.id, "url": image_url(image.id), "width": width, "height": height}
+
+@app.get("/images/{image_id}")
+def get_image(image_id: str, db: Session = Depends(get_db)):
+    # No sign-in: guests see question images during a game. IDs are random, so they can't be guessed.
+    image = db.query(models.Image).filter(models.Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return Response(
+        content=image.data,
+        media_type=image.content_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            # An image never changes; editing a question uploads a new one with a new ID
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
 
 @app.get("/quizzes/", response_model=list[schemas.Quiz])
 def get_all_quizzes(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
@@ -515,7 +576,9 @@ def get_student_history(db: Session = Depends(get_db), current_user: models.User
                     "correct_option": q.correct_option,
                     "correct_text": getattr(q, f"option_{q.correct_option}", q.correct_option),
                     "is_correct": a.is_correct,
-                    "explanation": q.explanation or "No explanation provided by the instructor."
+                    "explanation": q.explanation or "No explanation provided by the instructor.",
+                    "image_url": image_url(q.image_id),
+                    "image_alt": q.image_alt or "",
                 })
 
         history.append({
@@ -549,21 +612,31 @@ def question_view(room: dict, for_host: bool = False) -> dict:
         "time_limit": q["time_limit"],
         "index": index,
         "total": len(room["questions"]),
+        # Part of the question, so students get it too (unlike the answer texts)
+        "image_url": q["image_url"],
+        "image_alt": q["image_alt"],
     }
     if for_host:
         view["options"] = q["options"]
     return view
 
-def speed_bonus(time_limit, elapsed: float):
-    """0-500 bonus for answering fast, or None if the answer came in too late to count."""
+def speed_fraction(time_limit, elapsed: float):
+    """How fast the answer was, from 0 (slow) to 1 (instant), or None if it came in too late to count."""
     if time_limit is None:
-        # No deadline: full bonus early on, fading linearly to nothing
+        # No deadline: full marks for speed early on, fading linearly to nothing
         fade = (UNTIMED_NO_BONUS_SECONDS - elapsed) / (UNTIMED_NO_BONUS_SECONDS - UNTIMED_FULL_BONUS_SECONDS)
-        return int(min(max(fade, 0), 1) * 500)
+        return min(max(fade, 0), 1)
     if elapsed > time_limit + ANSWER_GRACE_SECONDS:
         return None
-    time_remaining = min(max(time_limit - elapsed, 0), time_limit)
-    return int(time_remaining / time_limit * 500)
+    return min(max(time_limit - elapsed, 0), time_limit) / time_limit
+
+def points_for_correct(speed: float, speed_weight: int) -> int:
+    """speed_weight % of MAX_POINTS depends on speed; the rest is for being correct.
+
+    At 50 this is the original 500 + up to 500 for speed. At 0 every correct answer gets MAX_POINTS.
+    """
+    weight = speed_weight / 100
+    return round(MAX_POINTS * (1 - weight) + MAX_POINTS * weight * speed)
 
 def answers_in(room: dict) -> int:
     """Answers to the current question from students who are still connected."""
@@ -677,10 +750,13 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                 "correct": q.correct_option,
                 # None = no timer, either for this question or for the whole quiz
                 "time_limit": q.time_limit_seconds if quiz.use_timer else None,
-                "explanation": q.explanation or ""
+                "explanation": q.explanation or "",
+                "image_url": image_url(q.image_id),
+                "image_alt": q.image_alt or "",
             } for q in quiz.questions
         ]
         auto_advance_results = quiz.auto_advance_results
+        speed_weight = quiz.speed_weight
     finally:
         db.close()
 
@@ -688,7 +764,8 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
     await websocket.accept()
     room_code = manager.create_room(quiz_id, websocket)
     manager.active_rooms[room_code]["auto_advance_results"] = auto_advance_results
-    await websocket.send_json({"event": "room_created", "room_code": room_code})
+    manager.active_rooms[room_code]["speed_weight"] = speed_weight
+    await websocket.send_json({"event": "room_created", "room_code": room_code, "speed_weight": speed_weight})
 
     try:
         while True:
@@ -888,12 +965,12 @@ async def websocket_student(
                 # The server keeps the clock, so a client can't claim extra time for a bigger bonus
                 current_question = room["questions"][current_q_index]
                 elapsed = time.monotonic() - room["question_started_at"]
-                bonus = speed_bonus(current_question["time_limit"], elapsed)
-                if bonus is None:
+                speed = speed_fraction(current_question["time_limit"], elapsed)
+                if speed is None:
                     continue
 
                 is_correct = (selected_option == current_question["correct"])
-                points = 500 + bonus if is_correct else 0
+                points = points_for_correct(speed, room.get("speed_weight", 50)) if is_correct else 0
 
                 student["last_answered_index"] = current_q_index
                 student["last_selected_option"] = selected_option

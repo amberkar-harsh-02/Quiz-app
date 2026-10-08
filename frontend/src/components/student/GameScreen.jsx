@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { assetUrl } from '../../api';
 import { ANSWERS } from '../../answers';
 import AnswerKey from '../AnswerKey';
 import useCountUp from '../useCountUp';
@@ -28,6 +29,32 @@ function CenteredMessage({ title, children }) {
       <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{title}</h2>
       {children}
     </div>
+  );
+}
+
+// The question's image; tap to see it full size (dense charts are hard to read small)
+function ZoomableImage({ src, alt }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [open]);
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="flex justify-center rounded-control bg-white/5 p-2" aria-label={`Enlarge image${alt ? `: ${alt}` : ''}`}>
+        <img src={src} alt={alt} className="max-h-[35vh] w-auto rounded-chip object-contain" />
+      </button>
+      {open && (
+        <div role="dialog" aria-modal="true" aria-label="Image" className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 motion-safe:animate-rise">
+          <button type="button" autoFocus onClick={() => setOpen(false)} className="absolute inset-0 cursor-zoom-out" aria-label="Close image" />
+          <img src={src} alt={alt} className="relative max-h-full max-w-full rounded-chip object-contain" />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -63,6 +90,8 @@ function QuestionView({ game, timeLeft: rawTimeLeft, onAnswer }) {
             </span>
           )}
         </div>
+
+        {question.image_url && <ZoomableImage src={assetUrl(question.image_url)} alt={question.image_alt || ''} />}
 
         <p role="status" className={`min-h-6 px-1 text-white/60 ${locked ? '' : 'invisible'}`}>
           {selected ? 'Answer locked in. Waiting for the others…' : "Time's up. Waiting for results…"}

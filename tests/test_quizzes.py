@@ -79,6 +79,18 @@ def test_builder_defaults_to_timer_on(client, professor):
     assert res.json()["auto_advance_results"] is True
 
 
+def test_builder_saves_scoring_weight(client, professor):
+    payload = {"title": "Correct only", "speed_weight": 0, "questions": [builder_question()]}
+    res = client.post("/quizzes/builder", json=payload, headers=auth_header(professor))
+    assert res.json()["speed_weight"] == 0
+
+    default = client.post("/quizzes/builder", json={"title": "T", "questions": [builder_question()]}, headers=auth_header(professor))
+    assert default.json()["speed_weight"] == 50
+
+    too_much = client.post("/quizzes/builder", json={**payload, "speed_weight": 101}, headers=auth_header(professor))
+    assert too_much.status_code == 422
+
+
 def test_builder_saves_results_pacing(client, professor):
     payload = {"title": "Paced", "auto_advance_results": False, "questions": [builder_question()]}
     res = client.post("/quizzes/builder", json=payload, headers=auth_header(professor))

@@ -1,3 +1,4 @@
+import { assetUrl } from '../../api';
 import { Button } from '../ui';
 import SpreadBars from './SpreadBars';
 
@@ -21,7 +22,12 @@ export default function RevealStage({ question, reveal, leaderboard, secondsLeft
               {answered ? `${accuracy}% correct` : 'No answers'}
             </p>
           </div>
-          <h1 className="mb-8 text-3xl font-bold leading-snug">{question.text}</h1>
+          <div className="mb-8 flex items-start justify-between gap-6">
+            <h1 className="text-3xl font-bold leading-snug">{question.text}</h1>
+            {question.image_url && (
+              <img src={assetUrl(question.image_url)} alt={question.image_alt || ''} className="max-h-28 w-auto shrink-0 rounded-chip border border-white/10 bg-white/5 object-contain" />
+            )}
+          </div>
 
           <div className="text-2xl font-bold">
             <SpreadBars

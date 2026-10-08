@@ -3,6 +3,8 @@
 export const API_URL = import.meta.env.VITE_API_URL
   || (import.meta.env.PROD ? `${window.location.origin}${import.meta.env.BASE_URL}api` : 'http://127.0.0.1:8000');
 export const WS_URL = API_URL.replace(/^http/, 'ws');
+// Server paths such as a question's "/images/<id>" -> full URL for <img src>
+export const assetUrl = (path) => (path ? `${API_URL}${path}` : null);
 
 const TOKEN_KEY = 'kahoot_token';
 

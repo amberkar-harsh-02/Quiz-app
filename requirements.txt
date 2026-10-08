@@ -11,3 +11,5 @@ bcrypt==3.2.2
 google-auth==2.60.0
 requests==2.34.2
 python-multipart==0.0.32
+# Checks, shrinks and strips metadata from question images
+pillow==12.3.0

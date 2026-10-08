@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, LargeBinary
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -13,6 +13,19 @@ class User(Base):
     hashed_password = Column(String)
     # Kept in sync with StaffEmail / ADMIN_EMAILS; checked by every professor-only route
     is_professor = Column(Boolean, default=False)
+
+
+class Image(Base):
+    """A question image, already resized and stripped of metadata (see images.py)."""
+    __tablename__ = "images"
+
+    id = Column(String, primary_key=True)  # random and unguessable; images are served without sign-in
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    content_type = Column(String, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    width = Column(Integer)
+    height = Column(Integer)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class StaffEmail(Base):
@@ -38,6 +51,8 @@ class Quiz(Base):
     use_timer = Column(Boolean, default=True, nullable=False)
     # Off: the results screen after every question waits for the professor's "Next Question"
     auto_advance_results = Column(Boolean, default=True, nullable=False)
+    # Share (0-100 %) of a correct answer's 1000 points that depends on speed; 0 = correctness only
+    speed_weight = Column(Integer, default=50, nullable=False)
 
     owner = relationship("User")
     questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
@@ -60,6 +75,9 @@ class Question(Base):
     
     # NEW: Store the explanation for why the answer is correct
     explanation = Column(String, nullable=True)
+    # Optional diagram/chart/photo shown with the question, and its description for screen readers
+    image_id = Column(String, nullable=True)
+    image_alt = Column(String, nullable=True)
 
     quiz = relationship("Quiz", back_populates="questions")
 

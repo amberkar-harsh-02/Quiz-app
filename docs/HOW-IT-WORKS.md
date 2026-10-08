@@ -10,6 +10,7 @@ This document explains how the app is put together: who does what, how a live ga
 - [WebSocket messages](#websocket-messages)
 - [Timers and pacing](#timers-and-pacing)
 - [Scoring and the timer](#scoring-and-the-timer)
+- [Question images](#question-images)
 - [Reconnecting](#reconnecting)
 - [What each side can see](#what-each-side-can-see)
 - [REST API](#rest-api)
@@ -190,12 +191,37 @@ The server sends `time_limit: null` in `show_question` for untimed questions, an
 
 ## Scoring and the timer
 
-- A correct answer is worth **500 points plus up to 500 for speed**: `500 + 500 × (time left ÷ time limit)`. A wrong or missing answer scores 0.
-- On a question with **no timer**, the speed bonus is the full 500 for an answer within 5 seconds of the question opening. It then fades evenly to 0 at 60 seconds. Late answers still count, for 500 points.
+- A correct answer is worth up to **1000 points**. The quiz's **Scoring** setting (`Quiz.speed_weight`, 0–100, default 50) is the share of those points that depends on speed:
+
+  `points = 1000 × (1 − w) + 1000 × w × speed`, where `w = speed_weight ÷ 100`
+
+  `speed` runs from 1 (instant) to 0 (slow):
+  - On a timed question it is `time left ÷ time limit`.
+  - On a question with **no timer** it is 1 for an answer within 5 seconds of the question opening, then fades evenly to 0 at 60 seconds.
+
+  A wrong or missing answer scores 0.
+- At the default of 50 that is the original 500 for being correct plus up to 500 for speed. At **0** ("Correct answers only") every correct answer earns 1000, whenever it arrives. A timer still closes the question, but doesn't change the points.
+- The lobby tells students which rule is in use. The host gets `speed_weight` in the `room_created` event.
 - **The server keeps the clock.** It records when each question starts and works out the time left itself when an answer arrives. Anything the browser says about time is ignored, so a student can't claim a bigger speed bonus.
 - An answer that arrives more than 1 second after the time limit is dropped. The 1 second allows for network lag.
 - Each student can answer each question once. An answer that isn't one of the four options is ignored.
 - Ties share a place: two students with the same score are both "2nd".
+
+## Question images
+
+Each question can have one JPG or PNG image, shown on the projector, on students' screens and in their review.
+
+- **Upload** (`POST /images`, professors only): the server reads at most 5 MB, then opens the file with Pillow (`images.py`). It accepts the file only if its contents are really JPEG or PNG; the filename and the browser's claimed type are ignored. It then:
+  1. rotates phone photos upright
+  2. shrinks the image to fit 1600 × 1600
+  3. re-saves it
+
+  Re-saving drops EXIF metadata such as GPS location. PNGs stay PNG, so diagrams keep sharp edges.
+- **Storage:** images live in the database (`images` table), so `kahoot.db` remains the only thing to back up. Each image gets a random 32-character ID.
+- **Serving** (`GET /images/{id}`): served without sign-in, because guests need them during a game. The IDs can't be guessed. Responses carry `X-Content-Type-Options: nosniff` and are cached for a year, since an image never changes; a new upload gets a new ID.
+- **Attaching to a question:** a quiz can only use images uploaded by its own professor.
+- **Removal:** an image is deleted when no question uses it any more, after a quiz is deleted or the image is removed in the editor. Copies made with "Save as a new quiz" share the image, so it is kept while any copy uses it.
+- **Where it appears:** `show_question` sends `image_url` and `image_alt` to the host and to students. Unlike the answer texts, the image is part of the question.
 
 ## Reconnecting
 
@@ -241,7 +267,9 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | POST | `/quizzes/{id}/questions/` 🔒 | Add one question (409 if played) |
 | GET | `/sessions/` 🔒 | Past games of your quizzes |
 | GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster |
-| GET | `/student/history` 👤 | Your past games with answers and explanations |
+| GET | `/student/history` 👤 | Your past games with answers, explanations and question images |
+| POST | `/images` 🔒 | Upload a JPG/PNG for a question; returns its `id` and `url` |
+| GET | `/images/{id}` | A question image (no sign-in) |
 
 FastAPI also serves interactive docs at `http://127.0.0.1:8000/docs`.
 
@@ -250,6 +278,8 @@ FastAPI also serves interactive docs at `http://127.0.0.1:8000/docs`.
 ```mermaid
 erDiagram
     User ||--o{ Quiz : owns
+    User ||--o{ Image : uploads
+    Image |o--o{ Question : "shown with"
     StaffEmail |o--o| User : "grants host access to"
     Quiz ||--o{ Question : has
     Quiz ||--o{ GameSession : "played as"
@@ -258,6 +288,15 @@ erDiagram
     StudentResult ||--o{ StudentAnswer : has
     Question ||--o{ StudentAnswer : "answered in"
 
+    Image {
+        string id
+        int owner_id
+        string content_type
+        blob data
+        int width
+        int height
+        datetime created_at
+    }
     StaffEmail {
         int id
         string email
@@ -276,6 +315,7 @@ erDiagram
         int owner_id
         bool use_timer
         bool auto_advance_results
+        int speed_weight
     }
     Question {
         int id
@@ -288,6 +328,8 @@ erDiagram
         string correct_option
         int time_limit_seconds
         string explanation
+        string image_id
+        string image_alt
     }
     GameSession {
         int id
@@ -320,6 +362,7 @@ erDiagram
 
 ```
 main.py                  FastAPI app: auth, REST endpoints, both WebSocket endpoints, scoring
+images.py                Checks, shrinks and strips metadata from uploaded question images
 game_manager.py          In-memory rooms: create, join, reconnect, online count, broadcast
 models.py                SQLAlchemy tables
 schemas.py               Pydantic request/response models, including quiz validation

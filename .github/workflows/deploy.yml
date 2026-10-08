@@ -75,7 +75,7 @@ jobs:
       # Only the backend source files: .env, kahoot.db and venv/ on the server are never touched
       - name: Upload backend
         run: |
-          rsync -az main.py game_manager.py models.py schemas.py database.py requirements.txt \
+          rsync -az main.py game_manager.py models.py schemas.py database.py images.py requirements.txt \
             "deploy:$APP_DIR/"
 
       # --delete is limited to the quiz-app web folder and clears old hashed assets

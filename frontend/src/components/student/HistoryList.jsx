@@ -1,3 +1,4 @@
+import { assetUrl } from '../../api';
 import { answerFor } from '../../answers';
 import AnswerKey from '../AnswerKey';
 import { Alert, Panel } from '../ui';
@@ -30,6 +31,9 @@ function AnswerReview({ q, number }) {
   return (
     <li className="border-t border-line py-5 first:border-t-0 first:pt-0 last:pb-0">
       <h4 className="mb-3 font-bold"><span className="mr-2 font-mono text-muted">{number}.</span>{q.question_text}</h4>
+      {q.image_url && (
+        <img src={assetUrl(q.image_url)} alt={q.image_alt || ''} loading="lazy" className="mb-3 max-h-64 w-auto rounded-chip border border-line bg-white object-contain" />
+      )}
 
       <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-2">
         <AnswerLine

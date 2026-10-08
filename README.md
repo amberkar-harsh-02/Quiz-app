@@ -80,6 +80,20 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 5. **Start.** Click **Start Game**. Each question closes when the timer runs out or everyone has answered. The projector then shows the answer spread, the explanation and the top 3.
 
    **Running it yourself:** in the quiz editor, turn off **Use a timer** for the whole quiz, or set a question's time limit to **No timer**. Those questions stay open until everyone has answered or you click **Show Results**. Their results then wait for you to click **Next Question**. To control the pace after every question, turn off **Move on from results automatically** as well.
+
+   **Scoring:** a correct answer is worth up to 1000 points. Under **Scoring** in the quiz editor, choose how much of that depends on speed:
+   - **Correct answers only** (0%): every correct answer earns 1000, however long it took.
+   - **Balanced** (50%, the default): 500 for being correct plus up to 500 for speed.
+   - **Speed matters** (75%).
+   - Or any value on the slider, in 10% steps.
+
+   Wrong answers always score 0.
+
+   **Images:** each question can have one JPG or PNG (a diagram, chart or photo). Click **+ Add image** under the question text.
+   - Uploads can be up to 5 MB.
+   - They're checked to be real images, resized to at most 1600 px, and re-saved, which removes hidden metadata such as a phone photo's location.
+   - Add an **Image description** for students who use screen readers.
+   - The image shows on the projector, on students' screens (tap to enlarge) and in their review.
 6. **Review.** After the last question, results are saved. Open **View Analytics** for per-question and per-student results.
 
 | Start page | My Quizzes | Quiz builder |
@@ -117,6 +131,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 | `title` | Yes | Quiz name shown on the dashboard. |
 | `use_timer` | No | `false` turns off timers for the whole quiz. Default `true`. |
 | `auto_advance_results` | No | `false` makes the results screen after every question wait for **Next Question**. Default `true`. |
+| `speed_weight` | No | 0–100: how many percent of a correct answer's 1000 points depend on speed. `0` = correct answers only. Default `50`. |
 | `text` | Yes | The question. |
 | `option_red` … `option_green` | Yes | The four answers, shown to players as **A, B, C, D** in that order. |
 | `correct_option` | Yes | `red`, `blue`, `yellow` or `green` (A, B, C or D). |
@@ -124,6 +139,8 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 | `explanation` | No | Shown on the projector after the question and in the student's review. |
 
 A file with a missing field or a bad value is rejected with a message naming the field. Nothing is saved.
+
+Images can't be included in a JSON file. Upload the quiz, then add images to its questions in the editor.
 
 ## Running the tests
 

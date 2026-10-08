@@ -3,11 +3,16 @@ import { Button } from '../ui';
 // e.g. "localhost:5173" in dev, "secotter.org/quiz-app" in production
 const joinAddress = `${window.location.host}${import.meta.env.BASE_URL}`.replace(/\/$/, '');
 
-export default function Lobby({ roomCode, players, totalPlayers, onStart }) {
+export default function Lobby({ roomCode, players, totalPlayers, speedWeight, onStart }) {
   return (
     <div className="flex flex-grow flex-col items-center justify-center text-center">
       <p className="text-3xl text-white/70">Go to <span className="font-bold text-white">{joinAddress}</span> and enter</p>
       <div className="my-6 font-mono text-[7rem] font-extrabold leading-none tracking-[0.15em]">{roomCode}</div>
+      <p className="mb-8 text-xl text-white/60">
+        {speedWeight === 0
+          ? "Scoring: correct answers only. Speed doesn't change your points."
+          : `Scoring: speed counts for ${speedWeight}% of the points.`}
+      </p>
 
       <Button size="lg" onClick={onStart} className="mb-12 min-w-72 bg-white !text-stage hover:bg-white/90">
         Start Game ({totalPlayers} {totalPlayers === 1 ? 'Player' : 'Players'})

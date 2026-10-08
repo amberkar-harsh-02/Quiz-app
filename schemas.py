@@ -28,6 +28,8 @@ class QuestionBase(BaseModel):
     # None means no timer for this question
     time_limit_seconds: Optional[int] = 15
     explanation: Optional[str] = None
+    image_id: Optional[str] = None
+    image_alt: Optional[str] = None
 
 class QuestionCreate(QuestionBase):
     pass
@@ -44,6 +46,7 @@ class QuizBase(BaseModel):
     title: str
     use_timer: bool = True
     auto_advance_results: bool = True
+    speed_weight: int = 50
 
 class QuizCreate(QuizBase):
     pass
@@ -67,6 +70,9 @@ class QuestionBuilderItem(BaseModel):
     # null = no timer for this question
     time_limit_seconds: Optional[int] = Field(default=15, ge=5, le=120)
     explanation: Optional[str] = ""
+    # From POST /images; must belong to the quiz's owner
+    image_id: Optional[str] = Field(default=None, max_length=64)
+    image_alt: Optional[str] = Field(default="", max_length=300)
 
 class FullQuizPayload(BaseModel):
     title: str = Field(min_length=1)
@@ -74,6 +80,8 @@ class FullQuizPayload(BaseModel):
     use_timer: bool = True
     # false = after every question the results wait for the professor's "Next Question"
     auto_advance_results: bool = True
+    # % of a correct answer's 1000 points that depends on speed; 0 = only correctness counts
+    speed_weight: int = Field(default=50, ge=0, le=100)
     questions: List[QuestionBuilderItem] = Field(min_length=1)
 
 class GoogleAuthRequest(BaseModel):

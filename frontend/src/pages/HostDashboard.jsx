@@ -16,6 +16,7 @@ export default function HostDashboard() {
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [message, setMessage] = useState(null); // { type: 'error' | 'success', text }
   const [isAdmin, setIsAdmin] = useState(false);
+  const [speedWeight, setSpeedWeight] = useState(50);
 
   // Game States
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -126,6 +127,7 @@ export default function HostDashboard() {
       if (data.event === 'room_created') {
         started = true;
         setRoomCode(data.room_code);
+        setSpeedWeight(data.speed_weight ?? 50);
         setView('lobby');
       } else if (data.event === 'player_joined') {
         setPlayers(prev => [...prev, data.student_name]);
@@ -179,7 +181,7 @@ export default function HostDashboard() {
   if (view !== 'dashboard') {
     return (
       <Stage roomCode={view === 'game_over' ? null : roomCode} playerCount={totalPlayers}>
-        {view === 'lobby' && <Lobby roomCode={roomCode} players={players} totalPlayers={totalPlayers} onStart={startGame} />}
+        {view === 'lobby' && <Lobby roomCode={roomCode} players={players} totalPlayers={totalPlayers} speedWeight={speedWeight} onStart={startGame} />}
 
         {view === 'question' && currentQuestion && (
           <QuestionStage question={currentQuestion} timeLeft={timeLeft} answersCount={answersCount} totalPlayers={totalPlayers} onSkip={showLeaderboard} />
