@@ -50,13 +50,17 @@ flowchart LR
 
 | Role | How they get it | What they can do |
 | --- | --- | --- |
-| Professor / TA | Email listed in `PROFESSOR_EMAILS` in `.env` | Create, upload, edit and delete quizzes, host games, view analytics |
+| Admin | Email listed in `ADMIN_EMAILS` in `.env` | Everything a professor can do, plus add and remove staff on the **Staff** page |
+| Professor / TA (staff) | Added by an admin on the **Staff** page | Create, upload, edit and delete quizzes, host games, view analytics |
 | Signed-in student | Any `@csumb.edu` account | Play, with results saved to their history |
 | Guest | No account, just a nickname | Play; results count for the session but aren't linked to an account |
 
 - Accounts are `@csumb.edu` only, created with a password or with Google sign-in.
-- Signing in returns a JWT that expires after 24 hours. It carries the email and an `is_professor` flag. The frontend keeps it in `localStorage` and sends it as a `Bearer` header.
-- Professor rights come only from `PROFESSOR_EMAILS`. There is no "I am a professor" option at sign-up. If an email is added to the list later, the account is promoted the next time it signs in.
+- Passwords need at least 8 characters. The sign-up form asks for the password twice.
+- Signing in returns a JWT that expires after 24 hours. It carries the email and `is_professor` / `is_admin` flags. The frontend keeps it in `localStorage` and sends it as a `Bearer` header.
+- Host access comes only from the staff list (`staff_emails` table) or `ADMIN_EMAILS`. There is no "I am a professor" option at sign-up.
+- An admin can add an email before that person has an account; it applies when they sign up. Adding or removing someone who already has an account takes effect immediately. Every professor-only request checks `User.is_professor` in the database rather than the flag in the token, and the frontend reads the current role from `GET /me`.
+- On startup the server copies existing professors and any emails in the old `PROFESSOR_EMAILS` setting onto the staff list, so upgrading doesn't take anyone's access away.
 - The host WebSocket checks the token and that the professor **owns** the quiz before it opens.
 
 ## A game from start to finish
@@ -216,13 +220,17 @@ The app is for a security course, and scores can count toward grades, so these r
 
 ## REST API
 
-Endpoints marked 🔒 need a professor token; 👤 needs any signed-in user.
+Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs any signed-in user.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/register` | Create an account (`@csumb.edu` only) |
 | POST | `/token` | Sign in with email and password, returns a JWT |
 | POST | `/google-login` | Sign in with a Google ID token, returns a JWT |
+| GET | `/me` 👤 | Your email and current `is_professor` / `is_admin` |
+| GET | `/staff` 🛡️ | Admins and staff, with whether each has signed up |
+| POST | `/staff` 🛡️ | Add a `@csumb.edu` email to the staff list (409 if already there) |
+| DELETE | `/staff/{email}` 🛡️ | Remove someone from the staff list (admins can't be removed here) |
 | GET | `/quizzes/` 🔒 | List your quizzes |
 | GET | `/quizzes/{id}` 🔒 | One quiz with questions and answers (owner only) |
 | POST | `/quizzes/builder` 🔒 | Create a quiz with all its questions |
@@ -242,6 +250,7 @@ FastAPI also serves interactive docs at `http://127.0.0.1:8000/docs`.
 ```mermaid
 erDiagram
     User ||--o{ Quiz : owns
+    StaffEmail |o--o| User : "grants host access to"
     Quiz ||--o{ Question : has
     Quiz ||--o{ GameSession : "played as"
     GameSession ||--o{ StudentResult : has
@@ -249,6 +258,12 @@ erDiagram
     StudentResult ||--o{ StudentAnswer : has
     Question ||--o{ StudentAnswer : "answered in"
 
+    StaffEmail {
+        int id
+        string email
+        string added_by
+        datetime created_at
+    }
     User {
         int id
         string email
@@ -318,6 +333,7 @@ frontend/src/
     HostDashboard.jsx    Quiz list and the host's game socket and timers
     QuizBuilder.jsx      Create and edit quizzes
     AnalyticsDashboard.jsx
+    StaffPage.jsx        Admins add and remove professors/TAs
   components/
     ui.jsx               Shared Button, Field, Alert, Panel, Wordmark
     AnswerKey.jsx        The A–D key badge

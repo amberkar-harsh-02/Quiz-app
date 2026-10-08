@@ -3,6 +3,7 @@ import StudentView from './pages/StudentView';
 import HostDashboard from './pages/HostDashboard';
 import QuizBuilder from './pages/QuizBuilder';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
+import StaffPage from './pages/StaffPage';
 
 // "/quiz-app" rather than "/quiz-app/", so the address works with or without the trailing slash
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
@@ -19,6 +20,7 @@ function App() {
           <Route path="/create" element={<QuizBuilder />} />
           <Route path="/create/:quizId" element={<QuizBuilder />} />
           <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/staff" element={<StaffPage />} />
         </Routes>
       </div>
     </BrowserRouter>

@@ -15,6 +15,7 @@ export default function HostDashboard() {
   const [players, setPlayers] = useState([]);
   const [totalPlayers, setTotalPlayers] = useState(0);
   const [message, setMessage] = useState(null); // { type: 'error' | 'success', text }
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Game States
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -36,6 +37,10 @@ export default function HostDashboard() {
   // Load Professor's Quizzes
   useEffect(() => {
     if (!readToken()) { navigate('/'); return; }
+    // Someone removed from the staff list goes back to the student side
+    apiFetch('/me')
+      .then((me) => (me.is_professor ? setIsAdmin(me.is_admin) : navigate('/')))
+      .catch(() => {});
     apiFetch('/quizzes/')
       .then(setQuizzes)
       .catch((err) => setMessage({ type: 'error', text: `Couldn't load your quizzes: ${err.message}` }));
@@ -212,6 +217,7 @@ export default function HostDashboard() {
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
           <Wordmark title="Quiz App" />
           <nav className="flex items-center gap-2">
+            {isAdmin && <Button variant="ghost" size="sm" onClick={() => navigate('/staff')}>Staff</Button>}
             <Button variant="ghost" size="sm" onClick={() => navigate('/analytics')}>View Analytics</Button>
             <Button variant="ghost" size="sm" onClick={() => { clearToken(); navigate('/'); }}>Log Out</Button>
           </nav>

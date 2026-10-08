@@ -24,8 +24,14 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
-# Only these accounts can host games; everyone else signs up as a student
-PROFESSOR_EMAILS = {e.strip().lower() for e in os.getenv("PROFESSOR_EMAILS", "").split(",") if e.strip()}
+def email_list(name: str) -> set:
+    return {e.strip().lower() for e in os.getenv(name, "").split(",") if e.strip()}
+
+# Admins can host and also manage who else can (the Staff page). Everyone they add there is staff;
+# everyone else is a student.
+ADMIN_EMAILS = email_list("ADMIN_EMAILS")
+# Older setting that granted host access directly. Its emails are copied onto the staff list at startup.
+LEGACY_PROFESSOR_EMAILS = email_list("PROFESSOR_EMAILS")
 
 # Answers that arrive this long after the timer ends (network lag) still count, for 0 speed bonus
 ANSWER_GRACE_SECONDS = 1.0
@@ -42,6 +48,21 @@ if not SECRET_KEY:
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
 add_missing_columns(engine)
+
+
+def seed_staff_emails():
+    """Carries existing access over to the staff list, so nobody loses it when this feature arrives."""
+    db = SessionLocal()
+    try:
+        listed = {row.email for row in db.query(models.StaffEmail).all()}
+        professors = {u.email for u in db.query(models.User).filter(models.User.is_professor == True)}  # noqa: E712
+        for email in sorted((professors | LEGACY_PROFESSOR_EMAILS) - listed - ADMIN_EMAILS):
+            db.add(models.StaffEmail(email=email, added_by="(carried over)"))
+        db.commit()
+    finally:
+        db.close()
+
+seed_staff_emails()
 
 app = FastAPI(title="CST 315 Kahoot Clone")
 
@@ -77,11 +98,23 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def grant_professor_if_listed(user: models.User, db: Session):
-    """Promotes an account whose email was added to PROFESSOR_EMAILS after it signed up."""
-    if user.email in PROFESSOR_EMAILS and not user.is_professor:
-        user.is_professor = True
+def is_staff(db: Session, email: str) -> bool:
+    return email in ADMIN_EMAILS or db.query(models.StaffEmail).filter(models.StaffEmail.email == email).first() is not None
+
+def sync_role(user: models.User, db: Session):
+    """Brings is_professor in line with the staff list, so additions and removals apply at sign-in."""
+    should_host = is_staff(db, user.email)
+    if user.is_professor != should_host:
+        user.is_professor = should_host
         db.commit()
+
+def login_response(user: models.User) -> dict:
+    token = create_access_token(data={
+        "sub": user.email,
+        "is_professor": user.is_professor,
+        "is_admin": user.email in ADMIN_EMAILS,
+    })
+    return {"access_token": token, "token_type": "bearer"}
 
 
 # --- AUTHORIZATION DEPENDENCIES ---
@@ -111,6 +144,11 @@ def get_current_professor(current_user: models.User = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Professors and TAs only.")
     return current_user
 
+def get_current_admin(current_user: models.User = Depends(get_current_user)):
+    if current_user.email not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Admins only.")
+    return current_user
+
 
 @app.post("/register", response_model=schemas.UserResponse)
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -126,7 +164,7 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     new_user = models.User(
         email=email,
         hashed_password=hashed_pw,
-        is_professor=email in PROFESSOR_EMAILS
+        is_professor=is_staff(db, email)
     )
 
     db.add(new_user)
@@ -141,9 +179,8 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    grant_professor_if_listed(user, db)
-    access_token = create_access_token(data={"sub": user.email, "is_professor": user.is_professor})
-    return {"access_token": access_token, "token_type": "bearer"}
+    sync_role(user, db)
+    return login_response(user)
 
 @app.post("/google-login")
 def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
@@ -164,22 +201,86 @@ def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db
             user = models.User(
                 email=email,
                 hashed_password="GOOGLE_SSO_USER",
-                is_professor=email in PROFESSOR_EMAILS
+                is_professor=is_staff(db, email)
             )
             db.add(user)
             db.commit()
             db.refresh(user)
         else:
-            grant_professor_if_listed(user, db)
+            sync_role(user, db)
 
-        access_token = create_access_token(data={"sub": user.email, "is_professor": user.is_professor})
-        return {"access_token": access_token, "token_type": "bearer"}
+        return login_response(user)
 
     except ValueError as e:
         # Print the exact error to your terminal
         print(f"GOOGLE AUTH ERROR: {str(e)}")
         # Send the exact error back to the frontend
         raise HTTPException(status_code=401, detail=f"Google Error: {str(e)}")
+
+
+@app.get("/me")
+def read_me(current_user: models.User = Depends(get_current_user)):
+    # The login token's role flags can be out of date; the frontend asks here instead
+    return {
+        "email": current_user.email,
+        "is_professor": bool(current_user.is_professor),
+        "is_admin": current_user.email in ADMIN_EMAILS,
+    }
+
+
+# --- STAFF (admins only) ---
+
+@app.get("/staff")
+def list_staff(db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)):
+    rows = db.query(models.StaffEmail).order_by(models.StaffEmail.email).all()
+    registered = {u.email for u in db.query(models.User).filter(models.User.email.in_([r.email for r in rows]))}
+    return {
+        "admins": sorted(ADMIN_EMAILS),
+        "staff": [
+            {
+                "email": r.email,
+                "signed_up": r.email in registered,
+                "added_by": r.added_by,
+                "added_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+@app.post("/staff", status_code=201)
+def add_staff(body: schemas.StaffAdd, db: Session = Depends(get_db), admin: models.User = Depends(get_current_admin)):
+    email = body.email.strip().lower()
+    if not email.endswith("@csumb.edu"):
+        raise HTTPException(status_code=400, detail="Only @csumb.edu email addresses can be added.")
+    if email in ADMIN_EMAILS:
+        raise HTTPException(status_code=400, detail="That email is already an admin.")
+    if db.query(models.StaffEmail).filter(models.StaffEmail.email == email).first():
+        raise HTTPException(status_code=409, detail="That email is already on the staff list.")
+
+    db.add(models.StaffEmail(email=email, added_by=admin.email))
+    # Takes effect right away for someone who already has an account
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user:
+        user.is_professor = True
+    db.commit()
+    return {"email": email, "signed_up": user is not None}
+
+@app.delete("/staff/{email}")
+def remove_staff(email: str, db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)):
+    email = email.strip().lower()
+    if email in ADMIN_EMAILS:
+        raise HTTPException(status_code=400, detail="Admins are set in the server's ADMIN_EMAILS and can't be removed here.")
+    row = db.query(models.StaffEmail).filter(models.StaffEmail.email == email).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="That email isn't on the staff list.")
+
+    db.delete(row)
+    # Their next request is refused; quizzes they made are kept
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user:
+        user.is_professor = False
+    db.commit()
+    return {"detail": "Removed."}
 
 
 # --- REST API ROUTES ---

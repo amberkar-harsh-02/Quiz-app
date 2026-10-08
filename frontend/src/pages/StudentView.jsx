@@ -35,6 +35,16 @@ export default function StudentView() {
   const navigate = useNavigate();
 
   const isStudent = user && !user.is_professor;
+  const signedInEmail = user?.sub;
+
+  // The role in the login token can be out of date (an admin may have added or removed this
+  // account on the Staff page since), so take the current role from the server
+  useEffect(() => {
+    if (!signedInEmail) return;
+    apiFetch('/me')
+      .then((me) => setUser((u) => u && { ...u, is_professor: me.is_professor, is_admin: me.is_admin }))
+      .catch(() => {});
+  }, [signedInEmail]);
 
   const loadHistory = useCallback(() => {
     apiFetch('/student/history')

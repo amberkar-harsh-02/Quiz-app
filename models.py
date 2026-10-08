@@ -11,7 +11,21 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
+    # Kept in sync with StaffEmail / ADMIN_EMAILS; checked by every professor-only route
     is_professor = Column(Boolean, default=False)
+
+
+class StaffEmail(Base):
+    """An email that gets professor/TA access, added by an admin on the Staff page.
+
+    The person may not have an account yet; access applies when they sign up or sign in.
+    """
+    __tablename__ = "staff_emails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    added_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Quiz(Base):
     """Stores the overarching quiz information."""

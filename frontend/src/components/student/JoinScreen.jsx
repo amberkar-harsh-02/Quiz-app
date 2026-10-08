@@ -63,9 +63,12 @@ function GuestJoinForm({ joinError, onJoin }) {
   );
 }
 
+const MIN_PASSWORD_LENGTH = 8;
+
 function SignInForm({ onSignIn }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -76,7 +79,11 @@ function SignInForm({ onSignIn }) {
     setNotice('');
     try {
       if (isRegistering) {
+        // Checked here for a clear message; the server enforces the length too
+        if (password.length < MIN_PASSWORD_LENGTH) return setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`);
+        if (password !== confirmPassword) return setError("Passwords don't match.");
         await apiFetch('/register', { method: 'POST', body: JSON.stringify({ email, password }) });
+        setConfirmPassword('');
         setIsRegistering(false);
         setNotice('Account created. Sign in to continue.');
         return;
@@ -112,9 +119,14 @@ function SignInForm({ onSignIn }) {
         <Field label="CSUMB email" id="email">
           <input id="email" type="email" required autoComplete="email" placeholder="you@csumb.edu" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
         </Field>
-        <Field label="Password" id="password">
+        <Field label="Password" hint={isRegistering ? `(at least ${MIN_PASSWORD_LENGTH} characters)` : undefined} id="password">
           <input id="password" type="password" required autoComplete={isRegistering ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         </Field>
+        {isRegistering && (
+          <Field label="Confirm password" id="confirm-password">
+            <input id="confirm-password" type="password" required autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
+          </Field>
+        )}
         <Button type="submit" size="lg" className="mt-2 w-full">
           {isRegistering ? 'Create account' : 'Sign in'}
         </Button>

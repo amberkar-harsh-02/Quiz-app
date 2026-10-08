@@ -32,14 +32,14 @@ Create a `.env` file next to `main.py`:
 
 ```ini
 SECRET_KEY=paste-a-long-random-string-here
-PROFESSOR_EMAILS=you@csumb.edu
+ADMIN_EMAILS=you@csumb.edu
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
 | Variable | Required | What it does |
 | --- | --- | --- |
 | `SECRET_KEY` | Yes | Signs login tokens. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. |
-| `PROFESSOR_EMAILS` | Yes, to host games | Comma-separated emails that get professor rights, e.g. `prof@csumb.edu,ta@csumb.edu`. Everyone else is a student. |
+| `ADMIN_EMAILS` | Yes, to host games | Comma-separated admin emails, e.g. `prof@csumb.edu`. Admins can host and manage who else can on the **Staff** page. Everyone not on the staff list is a student. |
 | `GOOGLE_CLIENT_ID` | Only for "Sign in with Google" | OAuth client ID from Google Cloud Console. |
 | `FRONTEND_ORIGIN` | No | Origins allowed to call the API. Leave it out for local use; any page on port 5173 is allowed. |
 
@@ -71,7 +71,9 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 ## 3. Play a game
 
-1. **Sign in as the professor.** On the start page, open **Sign in**, click **Need an account? Sign up**, and register with an email listed in `PROFESSOR_EMAILS`. Then sign in. You land on **My Quizzes**.
+1. **Sign in as the professor.** On the start page, open **Sign in**, click **Need an account? Sign up**, and register with an email listed in `ADMIN_EMAILS`. Passwords need at least 8 characters. Then sign in. You land on **My Quizzes**.
+
+   To give other professors or TAs access, open **Staff** in the top bar, type their `@csumb.edu` email and click **Add**. They don't need an account yet. They can host as soon as they sign up, or straight away if they already have an account. **Remove** takes access away again; their quizzes are kept.
 2. **Add a quiz.** Click **+ Create Quiz** to build one, or **Upload JSON** to import a file (format below).
 3. **Host it.** Click **Host Game**. The projector view shows the room PIN.
 4. **Join as students.** Open `http://localhost:5173` in other tabs, enter the PIN and a nickname under **Play as guest**. Students with a `@csumb.edu` account can sign in instead, which saves their results for review.
@@ -143,6 +145,8 @@ The live app runs at `https://secotterlab.org/quiz-app/`. GitHub Actions tests e
 
 Deploying restarts the backend, which ends any game in progress. Merge to `main` between classes.
 
+The server's `.env` needs `ADMIN_EMAILS` (the deploy never changes `.env`). On first start after upgrading, anyone who already had professor access, and any emails left in the old `PROFESSOR_EMAILS` setting, are copied onto the staff list automatically.
+
 **On the server** (`ubuntu@15.204.118.48`):
 
 - **Backend:** `~/quiz-app`, with its own `venv` and `.env`, run by the systemd service `quiz-app` on `127.0.0.1:8000`.
@@ -164,7 +168,7 @@ Deploying restarts the backend, which ends any game in progress. Merge to `main`
 
 | Problem | Fix |
 | --- | --- |
-| Signing in opens the student dashboard instead of **My Quizzes** | Your email isn't in `PROFESSOR_EMAILS`, or the server was started before you added it. Restart `uvicorn` (`--reload` doesn't watch `.env`), then log out and sign in again. |
+| Signing in opens the student dashboard instead of **My Quizzes** | Your email isn't on the staff list. Ask an admin to add it on the **Staff** page, then refresh. If you're meant to be an admin, check `ADMIN_EMAILS` in `.env` and restart `uvicorn` (`--reload` doesn't watch `.env`). |
 | "Could not reach the game server" | The backend isn't running on port 8000. Start `uvicorn`, or set `VITE_API_URL` in `frontend/.env.local` if it runs elsewhere. |
 | "This quiz has been played, so it can't be edited" | Played quizzes are locked so saved grades stay correct. Use **Save as a new quiz** in the editor to make a changed copy. |
 | Need a clean start | Stop the server and delete `kahoot.db`, `kahoot.db-wal` and `kahoot.db-shm`. |

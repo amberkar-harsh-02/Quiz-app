@@ -42,7 +42,9 @@ export async function apiFetch(path, options = {}) {
     window.location.assign(import.meta.env.BASE_URL);
   }
   if (!res.ok) {
-    const detail = typeof data?.detail === 'string' ? data.detail : `Request failed (${res.status})`;
+    const detail = typeof data?.detail === 'string'
+      ? data.detail
+      : data?.detail?.[0]?.msg ?? `Request failed (${res.status})`;
     throw new Error(detail);
   }
   return data;

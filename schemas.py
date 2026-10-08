@@ -4,7 +4,10 @@ from typing import List, Literal, Optional
 
 class UserCreate(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=8)
+
+class StaffAdd(BaseModel):
+    email: str
 
 class UserResponse(BaseModel):
     id: int

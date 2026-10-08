@@ -37,7 +37,7 @@ def test_create_access_token_does_not_mutate_input():
 # --- /register ---
 
 def test_register_success_lowercases_email(client, db):
-    res = client.post("/register", json={"email": "New.User@CSUMB.edu", "password": "pw"})
+    res = client.post("/register", json={"email": "New.User@CSUMB.edu", "password": "longenough1"})
 
     assert res.status_code == 200
     body = res.json()
@@ -45,41 +45,80 @@ def test_register_success_lowercases_email(client, db):
     assert body["is_professor"] is False
     assert "password" not in body and "hashed_password" not in body
     stored = db.query(models.User).filter_by(email="new.user@csumb.edu").one()
-    assert stored.hashed_password != "pw"
+    assert stored.hashed_password != "longenough1"
 
 
 def test_register_rejects_non_csumb_email(client):
-    res = client.post("/register", json={"email": "someone@gmail.com", "password": "pw"})
+    res = client.post("/register", json={"email": "someone@gmail.com", "password": "longenough1"})
     assert res.status_code == 400
     assert "csumb.edu" in res.json()["detail"]
 
 
 def test_register_rejects_duplicate_email_case_insensitive(client, student):
-    res = client.post("/register", json={"email": "STUDENT@csumb.edu", "password": "pw"})
+    res = client.post("/register", json={"email": "STUDENT@csumb.edu", "password": "longenough1"})
     assert res.status_code == 400
     assert res.json()["detail"] == "Email already registered."
 
 
 def test_register_ignores_self_declared_professor_flag(client):
-    res = client.post("/register", json={"email": "p@csumb.edu", "password": "pw", "is_professor": True})
+    res = client.post("/register", json={"email": "p@csumb.edu", "password": "longenough1", "is_professor": True})
     assert res.status_code == 200
     assert res.json()["is_professor"] is False
 
 
-def test_register_grants_professor_from_allowlist(client, monkeypatch):
-    monkeypatch.setattr(main, "PROFESSOR_EMAILS", {"p@csumb.edu"})
-    res = client.post("/register", json={"email": "P@csumb.edu", "password": "pw"})
+def test_register_rejects_short_password(client):
+    res = client.post("/register", json={"email": "p@csumb.edu", "password": "short"})
+    assert res.status_code == 422
+
+
+def test_register_grants_professor_to_email_on_staff_list(client, db):
+    db.add(models.StaffEmail(email="p@csumb.edu", added_by="admin@csumb.edu"))
+    db.commit()
+    res = client.post("/register", json={"email": "P@csumb.edu", "password": "longenough1"})
     assert res.json()["is_professor"] is True
 
 
-def test_login_promotes_account_added_to_allowlist_later(client, db, student, monkeypatch):
-    monkeypatch.setattr(main, "PROFESSOR_EMAILS", {"student@csumb.edu"})
-    res = client.post("/token", data={"username": "student@csumb.edu", "password": "password123"})
+def test_register_grants_professor_to_admin(client, monkeypatch):
+    monkeypatch.setattr(main, "ADMIN_EMAILS", {"boss@csumb.edu"})
+    res = client.post("/register", json={"email": "boss@csumb.edu", "password": "longenough1"})
+    assert res.json()["is_professor"] is True
 
-    payload = jwt.decode(res.json()["access_token"], main.SECRET_KEY, algorithms=[main.ALGORITHM])
-    assert payload["is_professor"] is True
+
+def test_login_syncs_role_with_staff_list(client, db, student, professor):
+    db.add(models.StaffEmail(email="student@csumb.edu", added_by="admin@csumb.edu"))
+    db.query(models.StaffEmail).filter_by(email="prof@csumb.edu").delete()
+    db.commit()
+
+    promoted = client.post("/token", data={"username": "student@csumb.edu", "password": "password123"})
+    demoted = client.post("/token", data={"username": "prof@csumb.edu", "password": "password123"})
+
+    decode = lambda res: jwt.decode(res.json()["access_token"], main.SECRET_KEY, algorithms=[main.ALGORITHM])
+    assert decode(promoted)["is_professor"] is True
+    assert decode(demoted)["is_professor"] is False
     db.refresh(student)
+    db.refresh(professor)
     assert student.is_professor is True
+    assert professor.is_professor is False
+
+
+def test_login_token_marks_admins(client, admin):
+    res = client.post("/token", data={"username": "admin@csumb.edu", "password": "password123"})
+    payload = jwt.decode(res.json()["access_token"], main.SECRET_KEY, algorithms=[main.ALGORITHM])
+    assert payload["is_admin"] is True
+    assert payload["is_professor"] is True
+
+
+# --- /me ---
+
+def test_me_reports_current_role(client, db, student, admin):
+    assert client.get("/me", headers=auth_header(student)).json() == {
+        "email": "student@csumb.edu", "is_professor": False, "is_admin": False,
+    }
+    assert client.get("/me", headers=auth_header(admin)).json()["is_admin"] is True
+
+
+def test_me_requires_sign_in(client):
+    assert client.get("/me").status_code == 401
 
 
 # --- /token ---

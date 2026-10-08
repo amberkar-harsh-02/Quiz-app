@@ -64,6 +64,9 @@ def make_user(db, email, is_professor=False, password="password123"):
         is_professor=is_professor,
     )
     db.add(user)
+    if is_professor:
+        # Staff are listed in staff_emails; signing in keeps is_professor in line with that list
+        db.add(models.StaffEmail(email=email, added_by="tests"))
     db.commit()
     db.refresh(user)
     return user
@@ -102,6 +105,16 @@ def question_data(text="2 + 2?", correct="blue", time_limit=20, explanation="Bas
 @pytest.fixture
 def professor(db):
     return make_user(db, "prof@csumb.edu", is_professor=True)
+
+
+@pytest.fixture
+def admin(db, monkeypatch):
+    # Admins come from ADMIN_EMAILS, not the staff list
+    monkeypatch.setattr(main, "ADMIN_EMAILS", {"admin@csumb.edu"})
+    user = make_user(db, "admin@csumb.edu")
+    user.is_professor = True
+    db.commit()
+    return user
 
 
 @pytest.fixture
