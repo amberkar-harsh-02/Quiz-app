@@ -101,6 +101,10 @@ def create_access_token(data: dict):
 def is_staff(db: Session, email: str) -> bool:
     return email in ADMIN_EMAILS or db.query(models.StaffEmail).filter(models.StaffEmail.email == email).first() is not None
 
+def can_host(user: models.User) -> bool:
+    # Admins always can, even before their stored flag catches up (e.g. ADMIN_EMAILS was just edited)
+    return bool(user.is_professor) or user.email in ADMIN_EMAILS
+
 def sync_role(user: models.User, db: Session):
     """Brings is_professor in line with the staff list, so additions and removals apply at sign-in."""
     should_host = is_staff(db, user.email)
@@ -111,7 +115,7 @@ def sync_role(user: models.User, db: Session):
 def login_response(user: models.User) -> dict:
     token = create_access_token(data={
         "sub": user.email,
-        "is_professor": user.is_professor,
+        "is_professor": can_host(user),
         "is_admin": user.email in ADMIN_EMAILS,
     })
     return {"access_token": token, "token_type": "bearer"}
@@ -140,7 +144,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 def get_current_professor(current_user: models.User = Depends(get_current_user)):
-    if not current_user.is_professor:
+    if not can_host(current_user):
         raise HTTPException(status_code=403, detail="Professors and TAs only.")
     return current_user
 
@@ -223,7 +227,7 @@ def read_me(current_user: models.User = Depends(get_current_user)):
     # The login token's role flags can be out of date; the frontend asks here instead
     return {
         "email": current_user.email,
-        "is_professor": bool(current_user.is_professor),
+        "is_professor": can_host(current_user),
         "is_admin": current_user.email in ADMIN_EMAILS,
     }
 
@@ -654,7 +658,7 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
     try:
         user = db.query(models.User).filter(models.User.email == payload.get("sub")).first()
         quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
-        if not user or not user.is_professor:
+        if not user or not can_host(user):
             await websocket.close(code=1008, reason="Professors only")
             return
         if not quiz or quiz.owner_id != user.id:

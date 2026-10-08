@@ -99,3 +99,14 @@ def test_seed_copies_existing_professors_and_legacy_emails(db, monkeypatch):
 
     emails = sorted(row.email for row in db.query(models.StaffEmail).all())
     assert emails == ["oldprof@csumb.edu", "pending@csumb.edu"]
+
+
+def test_admin_added_to_settings_later_can_host_without_signing_in_again(client, db, student, monkeypatch):
+    # An existing student account, still signed in, whose email is then put in ADMIN_EMAILS
+    monkeypatch.setattr(main, "ADMIN_EMAILS", {"student@csumb.edu"})
+
+    assert client.get("/me", headers=auth_header(student)).json() == {
+        "email": "student@csumb.edu", "is_professor": True, "is_admin": True,
+    }
+    assert client.get("/quizzes/", headers=auth_header(student)).status_code == 200
+    assert client.get("/staff", headers=auth_header(student)).status_code == 200
