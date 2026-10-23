@@ -1,4 +1,4 @@
-"""PDFs: a student's review of one game, and the professor's class report for a game."""
+"""PDFs: a student's review of one game, the professor's class report for a game, and a quiz's answer key."""
 from io import BytesIO
 from pathlib import Path
 
@@ -91,11 +91,11 @@ class QuizPDF(FPDF):
         self.set_xy(self.l_margin, y + 16)
         self.rule()
 
-    def answer_line(self, label, color_key, text, label_color=MUTED):
+    def answer_line(self, label, color_key, text, label_color=MUTED, label_width=32, bold=False, text_color=INK):
         """'Your answer:' [B] Preimage resistance, with the letter in its answer color."""
         self.set_font("Atkinson", "", 10)
         self.set_text_color(*label_color)
-        self.cell(32, 7, label)
+        self.cell(label_width, 7, label)
         if color_key in LETTERS:
             x, y = self.get_x(), self.get_y()
             self.set_fill_color(*ANSWER_COLORS[color_key])
@@ -105,8 +105,8 @@ class QuizPDF(FPDF):
             self.set_xy(x, y)
             self.cell(5.4, 7, LETTERS[color_key], align="C")
             self.set_x(x + 7.5)
-        self.set_font("Atkinson", "", 11)
-        self.set_text_color(*INK)
+        self.set_font("Atkinson", "B" if bold else "", 11)
+        self.set_text_color(*text_color)
         self.multi_cell(0, 7, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     def image_block(self, data: bytes, width_px: int, height_px: int):
@@ -118,6 +118,13 @@ class QuizPDF(FPDF):
             self.add_page()
         self.image(BytesIO(data), x=self.l_margin, y=self.get_y(), w=w, h=h)
         self.ln(h + 3)
+
+    def explanation_block(self, text):
+        self.ln(1)
+        self.set_fill_color(*SOFT)
+        self.set_font("Atkinson", "", 10)
+        self.set_text_color(*INK)
+        self.multi_cell(0, 5.5, f"Why: {text}", fill=True, padding=2.5, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     def keep_together(self, height):
         """Starts a new page if fewer than `height` mm are left, so a question isn't split oddly."""
@@ -152,12 +159,7 @@ def review_pdf(*, quiz_title, played_on, student_name, score, rank, total_player
             pdf.answer_line("Correct answer:", q["correct_option"], q["correct_text"])
         pdf.text_block(verdict, size=10, bold=True, color=verdict_color, height=6)
         if q.get("explanation"):
-            pdf.ln(1)
-            pdf.set_fill_color(*SOFT)
-            pdf.set_font("Atkinson", "", 10)
-            pdf.set_text_color(*INK)
-            pdf.multi_cell(0, 5.5, f"Why: {q['explanation']}", fill=True, padding=2.5,
-                           new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.explanation_block(q["explanation"])
         pdf.ln(4)
         pdf.rule()
     return bytes(pdf.output())
@@ -210,4 +212,29 @@ def class_report_pdf(*, analytics, questions, room_code, played_on) -> bytes:
         pdf.ln(7)
         pdf.set_draw_color(*LINE)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + sum(widths), pdf.get_y())
+    return bytes(pdf.output())
+
+
+def solutions_pdf(*, quiz_title, subtitle, questions) -> bytes:
+    """questions: dicts with number, text, image (bytes, w, h) or None, options ({color: text}),
+    correct_option, explanation."""
+    pdf = QuizPDF(f"{quiz_title}: answer key")
+    pdf.title_block(quiz_title, [subtitle, f"{len(questions)} {'question' if len(questions) == 1 else 'questions'}"])
+
+    for q in questions:
+        pdf.keep_together(48)
+        pdf.text_block(f"{q['number']}. {q['text']}", size=13, bold=True, height=6.5, gap=2)
+        if q.get("image"):
+            pdf.image_block(*q["image"])
+        for color in LETTERS:
+            if not q["options"].get(color):
+                continue
+            if color == q["correct_option"]:
+                pdf.answer_line("", color, f"{q['options'][color]}  (correct answer)", label_width=4, bold=True, text_color=OK)
+            else:
+                pdf.answer_line("", color, q["options"][color], label_width=4)
+        if q.get("explanation"):
+            pdf.explanation_block(q["explanation"])
+        pdf.ln(4)
+        pdf.rule()
     return bytes(pdf.output())

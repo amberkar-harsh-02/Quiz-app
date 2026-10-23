@@ -149,8 +149,77 @@ def test_grades_csv_neutralises_formula_nicknames(client, db, professor):
     assert rows[1][0] == '\'=HYPERLINK("http://x")'
 
 
-@pytest.mark.parametrize("path", ["report.pdf", "grades.csv"])
+def test_professor_downloads_a_students_review(client, db, professor, finished_game, monkeypatch):
+    bob = db.query(models.StudentResult).filter_by(student_name="Bob").one()
+    assert {s["name"]: s["result_id"] for s in client.get(f"/analytics/{finished_game.id}", headers=auth_header(professor)).json()["students"]}["Bob"] == bob.id
+    finished_game.created_at = datetime.utcnow() - timedelta(days=30)   # the professor's copy never expires
+    db.commit()
+
+    seen = {}
+    real = main.review_pdf
+    monkeypatch.setattr(main, "review_pdf", lambda **kw: seen.update(kw) or real(**kw))
+    res = client.get(f"/analytics/{finished_game.id}/students/{bob.id}/review.pdf", headers=auth_header(professor))
+
+    assert res.status_code == 200
+    assert res.content.startswith(b"%PDF")
+    assert 'filename="graded-quiz-bob-review.pdf"' in res.headers["content-disposition"]
+    assert seen["student_name"] == "Bob"
+    assert seen["questions"][0]["selected"] == "red"
+
+
+def test_student_review_must_belong_to_the_session(client, db, professor, finished_game):
+    other_session = make_session(db, make_quiz(db, professor, questions=[question_data()]), room_code="OTHER1")
+    stranger = models.StudentResult(session_id=other_session.id, student_name="Eve", total_score=0, correct_answers=0)
+    db.add(stranger)
+    db.commit()
+
+    res = client.get(f"/analytics/{finished_game.id}/students/{stranger.id}/review.pdf", headers=auth_header(professor))
+
+    assert res.status_code == 404
+
+
+def test_quiz_solutions_pdf(client, db, professor, monkeypatch):
+    quiz = make_quiz(db, professor, "Week 3 – Crypto", questions=[question_data(text="2 + 2?"), question_data(text="Q2", correct="green", explanation="")])
+    seen = {}
+    real = main.solutions_pdf
+    monkeypatch.setattr(main, "solutions_pdf", lambda **kw: seen.update(kw) or real(**kw))
+
+    res = client.get(f"/quizzes/{quiz.id}/solutions.pdf", headers=auth_header(professor))
+
+    assert res.status_code == 200
+    assert res.content.startswith(b"%PDF")
+    assert 'filename="week-3---crypto-solutions.pdf"' in res.headers["content-disposition"]
+    q1, q2 = seen["questions"]
+    assert q1["options"] == {"red": "3", "blue": "4", "yellow": "5", "green": "22"}
+    assert (q1["text"], q1["correct_option"], q1["explanation"]) == ("2 + 2?", "blue", "Basic math")
+    assert (q2["correct_option"], q2["explanation"]) == ("green", "")
+
+
+def test_session_solutions_use_the_questions_as_played(client, db, professor, monkeypatch):
+    quiz = make_quiz(db, professor, questions=[question_data(text="Original wording")])
+    session = make_session(db, quiz)
+    quiz.questions[0].text = "Edited later"
+    db.commit()
+    seen = {}
+    real = main.solutions_pdf
+    monkeypatch.setattr(main, "solutions_pdf", lambda **kw: seen.update(kw) or real(**kw))
+
+    res = client.get(f"/analytics/{session.id}/solutions.pdf", headers=auth_header(professor))
+
+    assert res.status_code == 200
+    assert seen["questions"][0]["text"] == "Original wording"
+
+
+def test_quiz_solutions_are_owner_only(client, db, professor):
+    quiz = make_quiz(db, professor, questions=[question_data()])
+    other = make_user(db, "other@csumb.edu", is_professor=True)
+    assert client.get(f"/quizzes/{quiz.id}/solutions.pdf", headers=auth_header(other)).status_code == 403
+    assert client.get(f"/quizzes/{quiz.id}/solutions.pdf").status_code == 401
+
+
+@pytest.mark.parametrize("path", ["report.pdf", "grades.csv", "solutions.pdf", "students/{bob}/review.pdf"])
 def test_downloads_are_owner_only(client, db, finished_game, path):
+    path = path.format(bob=db.query(models.StudentResult).filter_by(student_name="Bob").one().id)
     other = make_user(db, "other@csumb.edu", is_professor=True)
     assert client.get(f"/analytics/{finished_game.id}/{path}", headers=auth_header(other)).status_code == 403
     assert client.get(f"/analytics/{finished_game.id}/{path}").status_code == 401

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WS_URL, apiFetch, clearToken, getToken, readToken } from '../api';
+import { WS_URL, apiDownload, apiFetch, clearToken, getToken, readToken } from '../api';
 import { Alert, Button, Panel, Wordmark } from '../components/ui';
 import Stage from '../components/host/Stage';
 import Lobby from '../components/host/Lobby';
@@ -118,6 +118,11 @@ export default function HostDashboard() {
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
     }
+  };
+
+  const downloadSolutions = (quiz) => {
+    apiDownload(`/quizzes/${quiz.id}/solutions.pdf`, 'solutions.pdf')
+      .catch((err) => setMessage({ type: 'error', text: `Couldn't download: ${err.message}` }));
   };
 
   const hostGame = (quizId) => {
@@ -274,6 +279,7 @@ export default function HostDashboard() {
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => deleteQuiz(quiz)} className="hover:!bg-bad-soft hover:!text-bad">Delete</Button>
                   <Button variant="ghost" size="sm" onClick={() => duplicateQuiz(quiz)}>Duplicate</Button>
+                  <Button variant="ghost" size="sm" onClick={() => downloadSolutions(quiz)}>Solutions PDF</Button>
                   <Button variant="secondary" size="sm" onClick={() => navigate(`/create/${quiz.id}`)}>Edit</Button>
                   <Button size="sm" onClick={() => hostGame(quiz.id)}>Host Game</Button>
                 </div>

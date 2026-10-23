@@ -80,6 +80,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    - **Edit:** changes apply to future games. Past results in Analytics and in students' reviews keep the questions exactly as they were played.
    - **Duplicate:** makes "Copy of …" with the same questions, images and settings.
    - **Delete:** removes the quiz from My Quizzes. Its past games stay in Analytics.
+   - **Solutions PDF:** an answer key with every question, its four options with the correct one marked, and the explanation. Handy to share after class.
 3. **Host it.** Click **Host Game**. The projector view shows the room PIN.
 4. **Join as students.** Open `http://localhost:5173` in other tabs, enter the PIN and a nickname under **Play as guest**. Students with a `@csumb.edu` account can sign in instead, which saves their results for review.
 5. **Start.** Click **Start Game**. Each question closes when the timer runs out or everyone has answered. The projector then shows the answer spread, the explanation and the top 3.
@@ -100,8 +101,10 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    - Add an **Image description** for students who use screen readers.
    - The image shows on the projector, on students' screens (tap to enlarge) and in their review.
 6. **Review.** After the last question, the projector reveals the top 3 on a podium and results are saved. Open **View Analytics** for per-question and per-student results.
+   - **Download solutions:** the answer key for the questions exactly as they were played in that game.
    - **Download PDF report:** a printable class report with the overview, every question's results and the roster.
    - **Download grades (CSV):** name, email (for signed-in students), score, correct answers and accuracy, ready for a gradebook import. Nicknames that look like spreadsheet formulas are neutralised.
+   - **PDF** next to a student in the roster: that student's review (their answers, the correct answers and explanations), e.g. to email to someone who played as a guest. It works whether or not student reviews were turned on, and doesn't expire.
 
    **Review PDFs for students:** turn on **Let students download their review** in the quiz editor (off by default). At the end of the game, each student's screen then shows **Download my review (PDF)**. The PDF has their answers, the correct answers and the explanations, and works for guests too. Each link is unique to that student and stops working after 7 days.
 

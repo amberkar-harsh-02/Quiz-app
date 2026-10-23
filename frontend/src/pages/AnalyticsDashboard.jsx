@@ -61,6 +61,7 @@ export default function AnalyticsDashboard() {
           <h1 className="text-3xl font-bold tracking-tight">{selectedSession ? selectedSession.quiz_title : 'Analytics'}</h1>
           {selectedSession && (
             <div className="ml-auto flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => download('solutions.pdf')}>Download solutions</Button>
               <Button variant="secondary" size="sm" onClick={() => download('report.pdf')}>Download PDF report</Button>
               <Button variant="secondary" size="sm" onClick={() => download('grades.csv')}>Download grades (CSV)</Button>
             </div>
@@ -154,14 +155,18 @@ export default function AnalyticsDashboard() {
                           <th scope="col" className="px-4 py-3 font-bold">Name</th>
                           <th scope="col" className="px-4 py-3 text-right font-bold">Score</th>
                           <th scope="col" className="px-4 py-3 text-right font-bold">Accuracy</th>
+                          <th scope="col" className="px-4 py-3 text-right font-bold">Review</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line">
-                        {selectedSession.students.map((s, idx) => (
-                          <tr key={idx}>
+                        {selectedSession.students.map((s) => (
+                          <tr key={s.result_id}>
                             <td className="px-4 py-3 font-bold">{s.name}</td>
                             <td className="px-4 py-3 text-right font-mono">{s.final_score}</td>
                             <td className={`px-4 py-3 text-right font-mono font-bold ${accuracyTone(s.accuracy)}`}>{s.accuracy}%</td>
+                            <td className="px-4 py-2 text-right">
+                              <Button variant="ghost" size="sm" onClick={() => download(`students/${s.result_id}/review.pdf`)} aria-label={`Download ${s.name}'s review PDF`}>PDF</Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

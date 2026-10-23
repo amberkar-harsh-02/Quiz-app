@@ -11,7 +11,7 @@ from database import engine, SessionLocal, add_missing_columns
 import models, schemas
 from game_manager import manager
 from images import MAX_UPLOAD_BYTES, clean_image
-from pdfs import class_report_pdf, review_pdf
+from pdfs import class_report_pdf, review_pdf, solutions_pdf
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
@@ -598,6 +598,36 @@ def download_grades(session_id: int, db: Session = Depends(get_db), current_user
         "Content-Disposition": f'attachment; filename="{download_name(game_session.quiz_title or "quiz", "grades.csv")}"',
     })
 
+def solutions_response(db: Session, title: str, subtitle: str, rows) -> Response:
+    """rows: Question or SessionQuestion objects, in order."""
+    images = question_images(db, rows)
+    questions = []
+    for number, q in enumerate(rows, start=1):
+        image = images.get(q.image_id)
+        questions.append({
+            "number": number,
+            "text": q.text,
+            "image": (image.data, image.width, image.height) if image else None,
+            "options": {color: getattr(q, f"option_{color}") or "" for color in ("red", "blue", "yellow", "green")},
+            "correct_option": q.correct_option,
+            "explanation": q.explanation or "",
+        })
+    data = solutions_pdf(quiz_title=title, subtitle=subtitle, questions=questions)
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="{download_name(title, "solutions.pdf")}"',
+    })
+
+@app.get("/quizzes/{quiz_id}/solutions.pdf")
+def download_quiz_solutions(quiz_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    quiz = get_owned_quiz(quiz_id, db, current_user)
+    return solutions_response(db, quiz.title or "Quiz", "Answer key", quiz.questions)
+
+@app.get("/analytics/{session_id}/solutions.pdf")
+def download_session_solutions(session_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    # The questions as they were played, even if the quiz was edited or deleted since
+    game_session = owned_session(db, session_id, current_user)
+    return solutions_response(db, game_session.quiz_title or "Quiz", f"Answer key, as played {played_on(game_session)}", game_session.questions)
+
 @app.get("/review/{token}.pdf")
 def download_review(token: str, db: Session = Depends(get_db)):
     # No sign-in: guests use this too. The random token is the key, and it stops working after a week.
@@ -607,12 +637,26 @@ def download_review(token: str, db: Session = Depends(get_db)):
     session = db.query(models.GameSession).filter(models.GameSession.id == result.session_id).first()
     if not session or not session.created_at or datetime.utcnow() - session.created_at > timedelta(days=REVIEW_LINK_DAYS):
         raise HTTPException(status_code=410, detail="This review link has expired.")
+    return student_review_response(db, session, result, "review.pdf")
 
+@app.get("/analytics/{session_id}/students/{result_id}/review.pdf")
+def download_student_review(session_id: int, result_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    # The professor's copy, e.g. to email to a guest; unlike the student's link it doesn't expire
+    session = owned_session(db, session_id, current_user)
+    result = db.query(models.StudentResult).filter(
+        models.StudentResult.id == result_id, models.StudentResult.session_id == session.id
+    ).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Student result not found.")
+    return student_review_response(db, session, result, download_name(result.student_name or "student", "review.pdf"))
+
+def question_images(db: Session, rows) -> dict:
+    return {i.id: i for i in db.query(models.Image).filter(models.Image.id.in_([q.image_id for q in rows if q.image_id]))}
+
+def student_review_response(db: Session, session: models.GameSession, result: models.StudentResult, suffix: str) -> Response:
     answers = {a.question_id: a for a in db.query(models.StudentAnswer).filter(models.StudentAnswer.result_id == result.id)}
     scores = [r.total_score for r in db.query(models.StudentResult.total_score).filter(models.StudentResult.session_id == session.id)]
-    images = {
-        i.id: i for i in db.query(models.Image).filter(models.Image.id.in_([q.image_id for q in session.questions if q.image_id]))
-    }
+    images = question_images(db, session.questions)
     questions = []
     for number, q in enumerate(session.questions, start=1):
         answer = answers.get(q.question_id)
@@ -639,7 +683,7 @@ def download_review(token: str, db: Session = Depends(get_db)):
         questions=questions,
     )
     return Response(content=data, media_type="application/pdf", headers={
-        "Content-Disposition": f'attachment; filename="{download_name(session.quiz_title or "quiz", "review.pdf")}"',
+        "Content-Disposition": f'attachment; filename="{download_name(session.quiz_title or "quiz", suffix)}"',
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
@@ -689,6 +733,7 @@ def session_analytics(db: Session, game_session: models.GameSession) -> dict:
     for student in results:
         student_answers = db.query(models.StudentAnswer).filter(models.StudentAnswer.result_id == student.id).all()
         student_breakdowns.append({
+            "result_id": student.id,
             "name": student.student_name,
             "final_score": student.total_score,
             "total_correct": student.correct_answers,

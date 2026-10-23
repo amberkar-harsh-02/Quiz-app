@@ -119,7 +119,7 @@ Signed-in students can open **Review answers** to see each question, their answe
 
 ![Student review](screenshots/student-review.png)
 
-The professor sees the class results in **Analytics**: accuracy per question, the answer spread and a roster.
+The professor sees the class results in **Analytics**: accuracy per question, the answer spread and a roster. From there they can download an answer key, a class report, grades as CSV, or any one student's review PDF. The professor's copy of a review is looked up by the roster's `result_id` rather than a token, so it doesn't expire.
 
 ![Analytics](screenshots/analytics.png)
 
@@ -268,12 +268,15 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | PUT | `/quizzes/{id}` 🔒 | Replace a quiz's title, settings and questions (past games keep their copy) |
 | DELETE | `/quizzes/{id}` 🔒 | Delete a quiz (its past games stay in Analytics) |
 | POST | `/quizzes/{id}/duplicate` 🔒 | Copy a quiz as "Copy of …" with the same questions and settings |
+| GET | `/quizzes/{id}/solutions.pdf` 🔒 | Answer key for the quiz as it is now (owner only) |
 | POST | `/quizzes/` 🔒 | Create an empty quiz |
 | POST | `/quizzes/{id}/questions/` 🔒 | Add one question |
 | GET | `/sessions/` 🔒 | Past games of your quizzes |
-| GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster |
+| GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster (each student has a `result_id`) |
+| GET | `/analytics/{session_id}/solutions.pdf` 🔒 | Answer key for the questions as they were played |
 | GET | `/analytics/{session_id}/report.pdf` 🔒 | The same as a printable PDF class report |
 | GET | `/analytics/{session_id}/grades.csv` 🔒 | Grades for a gradebook. Cells starting with `=`, `+`, `-` or `@` get a leading `'`, so a nickname can't run as a spreadsheet formula. |
+| GET | `/analytics/{session_id}/students/{result_id}/review.pdf` 🔒 | One student's review PDF, for the professor (doesn't expire) |
 | GET | `/review/{token}.pdf` | One student's review PDF (no sign-in; the token is the key; expires after 7 days) |
 | GET | `/student/history` 👤 | Your past games with answers, explanations and question images |
 | POST | `/images` 🔒 | Upload a JPG/PNG for a question; returns its `id` and `url` |
