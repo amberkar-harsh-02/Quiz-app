@@ -109,6 +109,8 @@ After a timed question, the next question starts after a few seconds (10 when th
 
 After the last question, the server saves the session to the database and sends every student their final score, place and number correct. The room is then deleted.
 
+The saved session includes a **copy of the questions as they were played** (`session_questions`), plus the quiz's title and owner. Analytics and students' reviews read only that copy. So the professor can later edit or delete the quiz without changing past results.
+
 ![Game over](screenshots/student-game-over.png)
 
 Signed-in students can open **Review answers** to see each question, their answer, the correct answer and the explanation.
@@ -220,7 +222,7 @@ Each question can have one JPG or PNG image, shown on the projector, on students
 - **Storage:** images live in the database (`images` table), so `kahoot.db` remains the only thing to back up. Each image gets a random 32-character ID.
 - **Serving** (`GET /images/{id}`): served without sign-in, because guests need them during a game. The IDs can't be guessed. Responses carry `X-Content-Type-Options: nosniff` and are cached for a year, since an image never changes; a new upload gets a new ID.
 - **Attaching to a question:** a quiz can only use images uploaded by its own professor.
-- **Removal:** an image is deleted when no question uses it any more, after a quiz is deleted or the image is removed in the editor. Copies made with "Save as a new quiz" share the image, so it is kept while any copy uses it.
+- **Removal:** an image is deleted when no question uses it any more, after a quiz is deleted or the image is removed in the editor. Copies made with **Duplicate**, and the saved copies of past games, share the image, so it is kept while anything still uses it.
 - **Where it appears:** `show_question` sends `image_url` and `image_alt` to the host and to students. Unlike the answer texts, the image is part of the question.
 
 ## Reconnecting
@@ -241,7 +243,7 @@ The app is for a security course, and scores can count toward grades, so these r
 - **During a question, students never receive the answer texts or the correct answer.** They get only the question text and timing. The correct answer is sent only after the question closes.
 - `GET /quizzes/{id}` includes correct answers, so only the owning professor can call it.
 - A professor can only host, edit, delete or view analytics for their own quizzes.
-- **A quiz that has been played can't be edited or deleted.** Its saved results point at its questions, so changing it would corrupt past grades. The editor offers **Save as a new quiz** instead.
+- **Past results can't be changed by editing a quiz.** Each finished game stores its own copy of the questions. Editing a played quiz only affects future games. Deleting it removes it from My Quizzes, while its games, grades and reviews stay in Analytics.
 - Quiz uploads go through the same validation as the builder. A bad file is rejected as a whole, and nothing is half-saved.
 
 ## REST API
@@ -261,10 +263,11 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | GET | `/quizzes/{id}` 🔒 | One quiz with questions and answers (owner only) |
 | POST | `/quizzes/builder` 🔒 | Create a quiz with all its questions |
 | POST | `/quizzes/upload/` 🔒 | Create a quiz from a JSON file |
-| PUT | `/quizzes/{id}` 🔒 | Replace a quiz's title and questions (409 if played) |
-| DELETE | `/quizzes/{id}` 🔒 | Delete a quiz (409 if played) |
+| PUT | `/quizzes/{id}` 🔒 | Replace a quiz's title, settings and questions (past games keep their copy) |
+| DELETE | `/quizzes/{id}` 🔒 | Delete a quiz (its past games stay in Analytics) |
+| POST | `/quizzes/{id}/duplicate` 🔒 | Copy a quiz as "Copy of …" with the same questions and settings |
 | POST | `/quizzes/` 🔒 | Create an empty quiz |
-| POST | `/quizzes/{id}/questions/` 🔒 | Add one question (409 if played) |
+| POST | `/quizzes/{id}/questions/` 🔒 | Add one question |
 | GET | `/sessions/` 🔒 | Past games of your quizzes |
 | GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster |
 | GET | `/student/history` 👤 | Your past games with answers, explanations and question images |
@@ -283,6 +286,7 @@ erDiagram
     StaffEmail |o--o| User : "grants host access to"
     Quiz ||--o{ Question : has
     Quiz ||--o{ GameSession : "played as"
+    GameSession ||--o{ SessionQuestion : "questions as played"
     GameSession ||--o{ StudentResult : has
     User |o--o{ StudentResult : "signed-in player"
     StudentResult ||--o{ StudentAnswer : has
@@ -336,6 +340,18 @@ erDiagram
         int quiz_id
         string room_code
         datetime created_at
+        string quiz_title
+        int owner_id
+    }
+    SessionQuestion {
+        int id
+        int session_id
+        int question_id
+        int position
+        string text
+        string correct_option
+        string explanation
+        string image_id
     }
     StudentResult {
         int id
@@ -396,7 +412,7 @@ pytest -q
 The suite covers:
 
 - **Accounts:** sign-up, sign-in, Google sign-in and professor rights.
-- **Quizzes:** create, upload validation, edit and delete, including the "played quizzes are locked" rule.
+- **Quizzes:** create, upload validation, edit, duplicate and delete, including that past results keep the questions as played after an edit or delete.
 - **Analytics and history**, plus the database column upgrade.
 - **Full WebSocket games,** including:
   - server-side scoring (a forged time is ignored)

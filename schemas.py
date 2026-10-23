@@ -55,6 +55,8 @@ class Quiz(QuizBase):
     id: int
     owner_id: int
     questions: List[Question] = []
+    # How many finished games this quiz has; editing it never changes their results
+    times_played: int = 0
 
     class Config:
         from_attributes = True

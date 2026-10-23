@@ -1,7 +1,8 @@
 import pytest
 
 import models
-from conftest import auth_header, make_quiz, make_user, question_data
+import main
+from conftest import auth_header, make_quiz, make_session, make_user, question_data
 
 
 @pytest.fixture
@@ -12,9 +13,7 @@ def played_session(db, professor, student):
         question_data(text="Q2", correct="red", explanation=None),
     ])
     q1, q2 = quiz.questions
-    session = models.GameSession(quiz_id=quiz.id, room_code="ABC123")
-    db.add(session)
-    db.commit()
+    session = make_session(db, quiz)
 
     alice = models.StudentResult(session_id=session.id, student_name="Alice", total_score=1800,
                                  correct_answers=2, user_id=student.id)
@@ -36,11 +35,9 @@ def played_session(db, professor, student):
 # --- GET /sessions/ ---
 
 def test_sessions_lists_own_sessions_newest_first(client, db, professor, played_session):
-    newer = models.GameSession(quiz_id=played_session["quiz"].id, room_code="NEW999")
+    make_session(db, played_session["quiz"], "NEW999")
     other_prof = make_user(db, "other@csumb.edu", is_professor=True)
-    other_quiz = make_quiz(db, other_prof)
-    db.add_all([newer, models.GameSession(quiz_id=other_quiz.id, room_code="NOTMINE")])
-    db.commit()
+    make_session(db, make_quiz(db, other_prof), "NOTMINE")
 
     res = client.get("/sessions/", headers=auth_header(professor))
 
@@ -89,10 +86,7 @@ def test_analytics_overview_questions_and_students(client, professor, played_ses
 
 
 def test_analytics_empty_session(client, db, professor):
-    quiz = make_quiz(db, professor)
-    session = models.GameSession(quiz_id=quiz.id, room_code="EMPTY1")
-    db.add(session)
-    db.commit()
+    session = make_session(db, make_quiz(db, professor), "EMPTY1")
 
     res = client.get(f"/analytics/{session.id}", headers=auth_header(professor))
 
@@ -107,14 +101,73 @@ def test_analytics_not_found(client, professor):
     assert client.get("/analytics/999", headers=auth_header(professor)).status_code == 404
 
 
-def test_analytics_session_whose_quiz_is_gone(client, db, professor):
+# --- past results after the quiz is edited or deleted ---
+
+def edit_first_question(client, professor, quiz):
+    """Rewrites question 1: new text, new correct answer."""
+    payload = {"title": "Renamed Quiz", "questions": [
+        {**question_data(text="Q1 rewritten", correct="green")},
+        {**question_data(text="Q2", correct="red")},
+    ]}
+    res = client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor))
+    assert res.status_code == 200
+
+
+def test_editing_a_played_quiz_keeps_past_results_as_played(client, professor, student, played_session):
+    edit_first_question(client, professor, played_session["quiz"])
+
+    analytics = client.get(f"/analytics/{played_session['session'].id}", headers=auth_header(professor)).json()
+    assert analytics["quiz_title"] == "Played Quiz"
+    assert [q["text"] for q in analytics["questions"]] == ["Q1", "Q2"]
+    assert analytics["questions"][0]["accuracy"] == 50
+    assert analytics["questions"][0]["spread"] == {"red": 0, "blue": 1, "yellow": 0, "green": 1}
+
+    review = client.get("/student/history", headers=auth_header(student)).json()[0]
+    assert review["quiz_title"] == "Played Quiz"
+    assert review["details"][0]["question_text"] == "Q1"
+    assert review["details"][0]["correct_option"] == "blue"
+    assert review["details"][0]["is_correct"] == 1
+
+
+def test_deleting_a_played_quiz_keeps_its_results(client, db, professor, student, played_session):
+    assert client.delete(f"/quizzes/{played_session['quiz'].id}", headers=auth_header(professor)).status_code == 200
+
+    sessions = client.get("/sessions/", headers=auth_header(professor)).json()
+    assert [(s["quiz_title"], s["player_count"]) for s in sessions] == [("Played Quiz", 2)]
+    analytics = client.get(f"/analytics/{played_session['session'].id}", headers=auth_header(professor))
+    assert analytics.status_code == 200
+    assert analytics.json()["overview"]["average_accuracy"] == 75
+    review = client.get("/student/history", headers=auth_header(student)).json()
+    assert review[0]["details"][0]["question_text"] == "Q1"
+
+
+# --- games played before question copies existed ---
+
+def test_backfill_gives_old_games_a_copy_of_their_questions(client, db, professor, student):
+    quiz = make_quiz(db, professor, "Legacy Quiz", questions=[question_data(text="Old Q")])
+    legacy = models.GameSession(quiz_id=quiz.id, room_code="OLD001")   # no title, owner or copy
+    db.add(legacy)
+    db.commit()
+
+    main.backfill_session_snapshots()
+    main.backfill_session_snapshots()   # safe to run on every startup
+
+    db.expire_all()
+    assert legacy.quiz_title == "Legacy Quiz"
+    assert legacy.owner_id == professor.id
+    assert [q.text for q in legacy.questions] == ["Old Q"]
+    assert client.get(f"/analytics/{legacy.id}", headers=auth_header(professor)).status_code == 200
+
+
+def test_backfill_handles_a_game_whose_quiz_is_gone(db):
     db.add(models.GameSession(quiz_id=999, room_code="ORPHAN"))
     db.commit()
+
+    main.backfill_session_snapshots()
+
     session = db.query(models.GameSession).one()
-
-    res = client.get(f"/analytics/{session.id}", headers=auth_header(professor))
-
-    assert res.status_code == 404
+    assert session.quiz_title == "Deleted quiz"
+    assert session.questions == []
 
 
 def test_analytics_forbidden_for_other_professor(client, db, played_session):
@@ -150,9 +203,7 @@ def test_student_history_details(client, student, played_session):
 
 
 def test_student_history_newest_first(client, db, student, played_session):
-    later = models.GameSession(quiz_id=played_session["quiz"].id, room_code="LATER1")
-    db.add(later)
-    db.commit()
+    later = make_session(db, played_session["quiz"], "LATER1")
     db.add(models.StudentResult(session_id=later.id, student_name="Alice", total_score=5,
                                 correct_answers=0, user_id=student.id))
     db.commit()

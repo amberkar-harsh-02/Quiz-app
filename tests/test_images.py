@@ -4,7 +4,7 @@ import pytest
 from PIL import Image
 
 import models
-from conftest import auth_header, make_quiz, make_user, question_data
+from conftest import auth_header, make_quiz, make_session, make_user, question_data
 
 
 def picture(fmt="PNG", size=(40, 30), exif=None):
@@ -139,3 +139,15 @@ def test_removing_image_from_question_deletes_it(client, db, professor):
     assert res.status_code == 200
     db.expire_all()
     assert db.get(models.Image, image_id) is None
+
+
+def test_image_used_by_a_past_game_is_kept_after_its_quiz_is_deleted(client, db, professor):
+    image_id = upload(client, professor, picture()).json()["id"]
+    created = client.post("/quizzes/builder", json=quiz_payload(image_id), headers=auth_header(professor)).json()
+    make_session(db, db.get(models.Quiz, created["id"]))
+
+    client.delete(f"/quizzes/{created['id']}", headers=auth_header(professor))
+
+    db.expire_all()
+    assert db.get(models.Image, image_id) is not None
+    assert client.get(f"/images/{image_id}").status_code == 200

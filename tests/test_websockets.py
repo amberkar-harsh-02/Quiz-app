@@ -257,6 +257,10 @@ def test_full_game_scores_and_persists_results(client, db, quiz, professor, stud
     session = db.get(models.GameSession, session_id)
     assert session.quiz_id == quiz.id
     assert session.room_code == code
+    # The game keeps its own copy of the questions as played
+    assert session.quiz_title == "Live Quiz"
+    assert session.owner_id == professor.id
+    assert [(q.position, q.text, q.correct_option) for q in session.questions] == [(0, "Q1", "blue"), (1, "Q2", "red")]
     results = {r.student_name: r for r in session.results}
     assert results["Alice"].total_score == alice_score
     assert results["Alice"].correct_answers == 1

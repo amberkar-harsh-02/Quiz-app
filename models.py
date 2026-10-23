@@ -87,11 +87,39 @@ class GameSession(Base):
     __tablename__ = "game_sessions"
     
     id = Column(Integer, primary_key=True, index=True)
+    # May point at a quiz that has since been deleted; results read the copies below instead
     quiz_id = Column(Integer, ForeignKey("quizzes.id"))
     room_code = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     results = relationship("StudentResult", back_populates="session")
+    # Copied when the game ends, so results keep their title and owner if the quiz changes or is deleted
+    quiz_title = Column(String, nullable=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    questions = relationship("SessionQuestion", order_by="SessionQuestion.position", cascade="all, delete-orphan")
+
+
+class SessionQuestion(Base):
+    """A question exactly as it was played in one game.
+
+    Analytics and student reviews read these, so editing or deleting the quiz later
+    doesn't change past results.
+    """
+    __tablename__ = "session_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("game_sessions.id"), index=True)
+    question_id = Column(Integer)  # the original Question.id that StudentAnswer refers to; no FK, it may be gone
+    position = Column(Integer)
+    text = Column(String)
+    option_red = Column(String)
+    option_blue = Column(String)
+    option_yellow = Column(String)
+    option_green = Column(String)
+    correct_option = Column(String)
+    explanation = Column(String, nullable=True)
+    image_id = Column(String, nullable=True)
+    image_alt = Column(String, nullable=True)
 
 class StudentResult(Base):
     """Stores the final score for an individual student in a session."""

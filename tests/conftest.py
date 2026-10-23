@@ -90,6 +90,16 @@ def make_quiz(db, owner, title="Sample Quiz", questions=None, use_timer=True, au
     return quiz
 
 
+def make_session(db, quiz, room_code="ABC123"):
+    """A finished game, saved the way end_game does: title, owner and a copy of the questions."""
+    session = models.GameSession(quiz_id=quiz.id, room_code=room_code, quiz_title=quiz.title, owner_id=quiz.owner_id)
+    main.snapshot_questions(session, quiz.questions)
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
 def question_data(text="2 + 2?", correct="blue", time_limit=20, explanation="Basic math"):
     return {
         "text": text,

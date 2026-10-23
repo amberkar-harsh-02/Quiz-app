@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPExcept
 import json
 import secrets
 import time
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, SessionLocal, add_missing_columns
@@ -67,6 +68,40 @@ def seed_staff_emails():
         db.close()
 
 seed_staff_emails()
+
+
+def snapshot_questions(session: models.GameSession, questions):
+    """Copies questions onto a finished game; analytics and reviews read only this copy."""
+    session.questions = [
+        models.SessionQuestion(
+            question_id=q.id, position=i, text=q.text,
+            option_red=q.option_red, option_blue=q.option_blue,
+            option_yellow=q.option_yellow, option_green=q.option_green,
+            correct_option=q.correct_option, explanation=q.explanation,
+            image_id=q.image_id, image_alt=q.image_alt,
+        )
+        for i, q in enumerate(questions)
+    ]
+
+def backfill_session_snapshots():
+    """Gives games played before snapshots existed their copy. Played quizzes used to be locked,
+    so their current questions are exactly what was played."""
+    db = SessionLocal()
+    try:
+        for session in db.query(models.GameSession).filter(models.GameSession.quiz_title.is_(None)):
+            quiz = db.query(models.Quiz).filter(models.Quiz.id == session.quiz_id).first()
+            if quiz is None:
+                session.quiz_title = "Deleted quiz"
+                continue
+            session.quiz_title = quiz.title
+            session.owner_id = quiz.owner_id
+            if not session.questions:
+                snapshot_questions(session, quiz.questions)
+        db.commit()
+    finally:
+        db.close()
+
+backfill_session_snapshots()
 
 app = FastAPI(title="CST 315 Kahoot Clone")
 
@@ -301,21 +336,30 @@ def get_owned_quiz(quiz_id: int, db: Session, user: models.User) -> models.Quiz:
         raise HTTPException(status_code=403, detail="Not authorized to access this quiz.")
     return quiz
 
-def ensure_never_played(quiz: models.Quiz, db: Session, action: str):
-    """Played quizzes back student grades, so changing or removing them would corrupt analytics."""
-    if db.query(models.GameSession).filter(models.GameSession.quiz_id == quiz.id).first():
-        raise HTTPException(
-            status_code=409,
-            detail=f"This quiz has been played, so it can't be {action}. Duplicate it to make changes."
-        )
+def with_times_played(db: Session, quizzes):
+    """Fills Quiz.times_played (shown in My Quizzes and the editor) with one query."""
+    ids = [q.id for q in quizzes]
+    counts = dict(
+        db.query(models.GameSession.quiz_id, func.count(models.GameSession.id))
+        .filter(models.GameSession.quiz_id.in_(ids))
+        .group_by(models.GameSession.quiz_id)
+    ) if ids else {}
+    for q in quizzes:
+        q.times_played = counts.get(q.id, 0)
+    return quizzes
 
 def image_url(image_id):
     return f"/images/{image_id}" if image_id else None
 
 def delete_unused_images(db: Session, image_ids: set):
-    """Deletes images no question points at any more. Copies of a quiz share images, so check first."""
+    """Deletes images nothing points at any more. Copies of a quiz share images, and past games
+    keep theirs for student reviews, so check both first."""
     for image_id in image_ids:
-        if image_id and not db.query(models.Question).filter(models.Question.image_id == image_id).first():
+        in_use = (
+            db.query(models.Question).filter(models.Question.image_id == image_id).first()
+            or db.query(models.SessionQuestion).filter(models.SessionQuestion.image_id == image_id).first()
+        )
+        if image_id and not in_use:
             db.query(models.Image).filter(models.Image.id == image_id).delete()
     db.commit()
 
@@ -377,15 +421,15 @@ def create_quiz_from_builder(payload: schemas.FullQuizPayload, db: Session = Dep
 
 @app.put("/quizzes/{quiz_id}", response_model=schemas.Quiz)
 def update_quiz(quiz_id: int, payload: schemas.FullQuizPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    # Past games keep their own copy of the questions, so editing a played quiz is safe
     quiz = get_owned_quiz(quiz_id, db, current_user)
-    ensure_never_played(quiz, db, "edited")
-    return save_quiz(db, quiz, payload)
+    return with_times_played(db, [save_quiz(db, quiz, payload)])[0]
 
 @app.delete("/quizzes/{quiz_id}")
 def delete_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
     quiz = get_owned_quiz(quiz_id, db, current_user)
-    ensure_never_played(quiz, db, "deleted")
 
+    # Past games and their results stay in Analytics; they keep their own copy of the questions.
     # Questions are removed by the relationship's delete-orphan cascade
     image_ids = {q.image_id for q in quiz.questions if q.image_id}
     db.delete(quiz)
@@ -432,17 +476,37 @@ def get_image(image_id: str, db: Session = Depends(get_db)):
 
 @app.get("/quizzes/", response_model=list[schemas.Quiz])
 def get_all_quizzes(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
-    return db.query(models.Quiz).filter(models.Quiz.owner_id == current_user.id).all()
+    return with_times_played(db, db.query(models.Quiz).filter(models.Quiz.owner_id == current_user.id).all())
 
 @app.get("/quizzes/{quiz_id}", response_model=schemas.Quiz)
 def read_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
     # Owner-only: the response includes the correct answers
-    return get_owned_quiz(quiz_id, db, current_user)
+    return with_times_played(db, [get_owned_quiz(quiz_id, db, current_user)])[0]
+
+@app.post("/quizzes/{quiz_id}/duplicate", response_model=schemas.Quiz)
+def duplicate_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    original = get_owned_quiz(quiz_id, db, current_user)
+    copy = models.Quiz(
+        title=f"Copy of {original.title}", owner_id=current_user.id,
+        use_timer=original.use_timer, auto_advance_results=original.auto_advance_results,
+        speed_weight=original.speed_weight,
+        # Images are shared, not copied; they're only deleted once nothing uses them
+        questions=[
+            models.Question(**{f: getattr(q, f) for f in (
+                "text", "option_red", "option_blue", "option_yellow", "option_green", "correct_option",
+                "time_limit_seconds", "explanation", "image_id", "image_alt",
+            )})
+            for q in original.questions
+        ],
+    )
+    db.add(copy)
+    db.commit()
+    db.refresh(copy)
+    return copy
 
 @app.post("/quizzes/{quiz_id}/questions/", response_model=schemas.Question)
 def create_question_for_quiz(quiz_id: int, question: schemas.QuestionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
-    db_quiz = get_owned_quiz(quiz_id, db, current_user)
-    ensure_never_played(db_quiz, db, "edited")
+    get_owned_quiz(quiz_id, db, current_user)
 
     db_question = models.Question(**question.model_dump(), quiz_id=quiz_id)
     db.add(db_question)
@@ -452,20 +516,15 @@ def create_question_for_quiz(quiz_id: int, question: schemas.QuestionCreate, db:
 
 @app.get("/sessions/")
 def get_past_sessions(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
-    # 1. Get all quizzes owned by the professor
-    quizzes = db.query(models.Quiz).filter(models.Quiz.owner_id == current_user.id).all()
-    quiz_ids = [q.id for q in quizzes]
-
-    # 2. Get all game sessions for those quizzes
-    sessions = db.query(models.GameSession).filter(models.GameSession.quiz_id.in_(quiz_ids)).order_by(models.GameSession.id.desc()).all()
+    # Sessions carry their own owner and title, so games of edited or deleted quizzes still show
+    sessions = db.query(models.GameSession).filter(models.GameSession.owner_id == current_user.id).order_by(models.GameSession.id.desc()).all()
 
     result = []
     for s in sessions:
-        quiz = db.query(models.Quiz).filter(models.Quiz.id == s.quiz_id).first()
         player_count = db.query(models.StudentResult).filter(models.StudentResult.session_id == s.id).count()
         result.append({
             "id": s.id,
-            "quiz_title": quiz.title if quiz else "Unknown Quiz",
+            "quiz_title": s.quiz_title,
             "room_code": s.room_code,
             "player_count": player_count
         })
@@ -478,14 +537,12 @@ def get_session_analytics(session_id: int, db: Session = Depends(get_db), curren
     if not game_session:
         raise HTTPException(status_code=404, detail="Game session not found.")
 
-    quiz = db.query(models.Quiz).filter(models.Quiz.id == game_session.quiz_id).first()
-    if quiz is None:
-        raise HTTPException(status_code=404, detail="The quiz for this session no longer exists.")
-    if quiz.owner_id != current_user.id:
+    if game_session.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this session.")
 
     results = db.query(models.StudentResult).filter(models.StudentResult.session_id == session_id).all()
-    questions = db.query(models.Question).filter(models.Question.quiz_id == quiz.id).all()
+    # The questions as they were played, even if the quiz was edited or deleted since
+    questions = game_session.questions
 
     total_students = len(results)
 
@@ -500,7 +557,7 @@ def get_session_analytics(session_id: int, db: Session = Depends(get_db), curren
     for q in questions:
         answers = db.query(models.StudentAnswer).join(models.StudentResult).filter(
             models.StudentResult.session_id == session_id,
-            models.StudentAnswer.question_id == q.id
+            models.StudentAnswer.question_id == q.question_id
         ).all()
 
         correct_count = sum(1 for a in answers if a.is_correct)
@@ -513,7 +570,7 @@ def get_session_analytics(session_id: int, db: Session = Depends(get_db), curren
                 spread[a.selected_option] += 1
 
         question_stats.append({
-            "question_id": q.id,
+            "question_id": q.question_id,
             "text": q.text,
             "correct_count": correct_count,
             "incorrect_count": incorrect_count,
@@ -541,7 +598,7 @@ def get_session_analytics(session_id: int, db: Session = Depends(get_db), curren
 
     return {
         "session_id": game_session.id,
-        "quiz_title": quiz.title,
+        "quiz_title": game_session.quiz_title,
         "overview": {
             "total_students": total_students,
             "average_score": round(average_score),
@@ -560,14 +617,15 @@ def get_student_history(db: Session = Depends(get_db), current_user: models.User
     for r in results:
         session = db.query(models.GameSession).filter(models.GameSession.id == r.session_id).first()
         if not session: continue
-        quiz = db.query(models.Quiz).filter(models.Quiz.id == session.quiz_id).first()
-        total_questions = len(quiz.questions) if quiz else 0
+        # The questions as they were played, even if the quiz was edited or deleted since
+        played = {q.question_id: q for q in session.questions}
+        total_questions = len(played)
 
         answers = db.query(models.StudentAnswer).filter(models.StudentAnswer.result_id == r.id).all()
         details = []
 
         for a in answers:
-            q = db.query(models.Question).filter(models.Question.id == a.question_id).first()
+            q = played.get(a.question_id)
             if q:
                 details.append({
                     "question_text": q.text,
@@ -584,7 +642,7 @@ def get_student_history(db: Session = Depends(get_db), current_user: models.User
         history.append({
             "id": r.id,
             "session_id": r.session_id,
-            "quiz_title": quiz.title if quiz else "Unknown Quiz",
+            "quiz_title": session.quiz_title,
             "played_at": session.created_at.isoformat() if session.created_at else None,
             "total_score": r.total_score,
             "correct_answers": r.correct_answers,
@@ -755,6 +813,10 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                 "image_alt": q.image_alt or "",
             } for q in quiz.questions
         ]
+        # Copied onto the finished game, so its results don't depend on the quiz afterwards
+        snapshot_source = list(quiz.questions)
+        quiz_title, owner_id = quiz.title, quiz.owner_id
+        db.expunge_all()
         auto_advance_results = quiz.auto_advance_results
         speed_weight = quiz.speed_weight
     finally:
@@ -804,7 +866,10 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                 if total_questions:
                     db = SessionLocal()
                     try:
-                        game_session = models.GameSession(quiz_id=quiz_id, room_code=room_code)
+                        game_session = models.GameSession(
+                            quiz_id=quiz_id, room_code=room_code, quiz_title=quiz_title, owner_id=owner_id,
+                        )
+                        snapshot_questions(game_session, snapshot_source)
                         db.add(game_session)
                         db.flush()
 

@@ -75,6 +75,11 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
    To give other professors or TAs access, open **Staff** in the top bar, type their `@csumb.edu` email and click **Add**. They don't need an account yet. They can host as soon as they sign up, or straight away if they already have an account. **Remove** takes access away again; their quizzes are kept.
 2. **Add a quiz.** Click **+ Create Quiz** to build one, or **Upload JSON** to import a file (format below).
+
+   You can **Edit**, **Duplicate** or **Delete** any quiz at any time, including ones you've already played:
+   - **Edit:** changes apply to future games. Past results in Analytics and in students' reviews keep the questions exactly as they were played.
+   - **Duplicate:** makes "Copy of …" with the same questions, images and settings.
+   - **Delete:** removes the quiz from My Quizzes. Its past games stay in Analytics.
 3. **Host it.** Click **Host Game**. The projector view shows the room PIN.
 4. **Join as students.** Open `http://localhost:5173` in other tabs, enter the PIN and a nickname under **Play as guest**. Students with a `@csumb.edu` account can sign in instead, which saves their results for review.
 5. **Start.** Click **Start Game**. Each question closes when the timer runs out or everyone has answered. The projector then shows the answer spread, the explanation and the top 3.
@@ -187,5 +192,4 @@ The server's `.env` needs `ADMIN_EMAILS` (the deploy never changes `.env`). On f
 | --- | --- |
 | Signing in opens the student dashboard instead of **My Quizzes** | Your email isn't on the staff list. Ask an admin to add it on the **Staff** page, then refresh. If you're meant to be an admin, check `ADMIN_EMAILS` in `.env` and restart `uvicorn` (`--reload` doesn't watch `.env`). |
 | "Could not reach the game server" | The backend isn't running on port 8000. Start `uvicorn`, or set `VITE_API_URL` in `frontend/.env.local` if it runs elsewhere. |
-| "This quiz has been played, so it can't be edited" | Played quizzes are locked so saved grades stay correct. Use **Save as a new quiz** in the editor to make a changed copy. |
 | Need a clean start | Stop the server and delete `kahoot.db`, `kahoot.db-wal` and `kahoot.db-shm`. |

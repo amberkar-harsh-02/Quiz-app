@@ -159,8 +159,8 @@ export default function QuizBuilder() {
   const [isLoading, setIsLoading] = useState(Boolean(quizId));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-  // Set when the server refuses to change a quiz that has already been played
-  const [offerCopy, setOfferCopy] = useState(false);
+  // Finished games of this quiz; they keep their own copy of the questions, so editing is safe
+  const [timesPlayed, setTimesPlayed] = useState(0);
 
   const navigate = useNavigate();
 
@@ -174,6 +174,7 @@ export default function QuizBuilder() {
         setUseTimer(quiz.use_timer ?? true);
         setAutoAdvance(quiz.auto_advance_results ?? true);
         setSpeedWeight(quiz.speed_weight ?? 50);
+        setTimesPlayed(quiz.times_played ?? 0);
         setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '', image_alt: q.image_alt ?? '' })));
       })
       .catch((err) => setError(`Couldn't load this quiz: ${err.message}`))
@@ -198,9 +199,8 @@ export default function QuizBuilder() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const saveQuiz = async (asNewQuiz = false) => {
+  const saveQuiz = async () => {
     setError('');
-    setOfferCopy(false);
     if (!title.trim()) return fail('Please enter a quiz title.');
 
     // Quick validation to ensure no empty fields
@@ -214,7 +214,7 @@ export default function QuizBuilder() {
       speed_weight: speedWeight,
       questions: questions.map((q) => Object.fromEntries(QUESTION_FIELDS.map((f) => [f, q[f]]))),
     };
-    const editing = quizId && !asNewQuiz;
+    const editing = Boolean(quizId);
 
     setIsSaving(true);
     try {
@@ -225,7 +225,6 @@ export default function QuizBuilder() {
       navigate('/host');
     } catch (err) {
       fail(err.message);
-      setOfferCopy(editing && err.message.includes('Duplicate'));
       setIsSaving(false);
     }
   };
@@ -246,15 +245,15 @@ export default function QuizBuilder() {
       <main className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="mb-6 text-3xl font-bold tracking-tight">{quizId ? 'Edit Quiz' : 'Quiz Builder'}</h1>
 
+        {timesPlayed > 0 && (
+          <p className="mb-6 rounded-control border border-line bg-white px-4 py-3 text-muted">
+            Played {timesPlayed} {timesPlayed === 1 ? 'time' : 'times'}. Changes apply to future games; past results keep the questions as they were played.
+          </p>
+        )}
+
         {error && (
           <div className="mb-6">
-            <Alert
-              action={offerCopy && (
-                <Button variant="danger" size="sm" onClick={() => saveQuiz(true)} disabled={isSaving}>Save as a new quiz</Button>
-              )}
-            >
-              {error}
-            </Alert>
+            <Alert>{error}</Alert>
           </div>
         )}
 

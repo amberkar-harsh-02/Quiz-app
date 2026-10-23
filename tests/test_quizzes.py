@@ -1,7 +1,7 @@
 import json
 
 import models
-from conftest import auth_header, make_quiz, make_user, question_data
+from conftest import auth_header, make_quiz, make_session, make_user, question_data
 
 
 def builder_question(**overrides):
@@ -265,16 +265,16 @@ def test_update_quiz_owned_by_someone_else(client, db, professor):
     assert client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor)).status_code == 403
 
 
-def test_update_quiz_blocked_once_played(client, db, professor):
+def test_played_quiz_can_be_edited(client, db, professor):
     quiz = make_quiz(db, professor, questions=[question_data()])
-    db.add(models.GameSession(quiz_id=quiz.id, room_code="PLAYED"))
-    db.commit()
-    payload = {"title": "New", "questions": [builder_question()]}
+    make_session(db, quiz)
+    payload = {"title": "New", "questions": [builder_question(text="Changed")]}
 
     res = client.put(f"/quizzes/{quiz.id}", json=payload, headers=auth_header(professor))
 
-    assert res.status_code == 409
-    assert "Duplicate" in res.json()["detail"]
+    assert res.status_code == 200
+    assert res.json()["questions"][0]["text"] == "Changed"
+    assert res.json()["times_played"] == 1
 
 
 # --- DELETE /quizzes/{id} ---
@@ -304,13 +304,55 @@ def test_delete_quiz_owned_by_someone_else(client, db, professor):
     assert db.query(models.Quiz).count() == 1
 
 
-def test_delete_quiz_blocked_once_played(client, db, professor):
-    # Deleting would orphan the session's grades and break analytics
+def test_played_quiz_can_be_deleted_and_its_games_stay(client, db, professor):
     quiz = make_quiz(db, professor, questions=[question_data()])
-    db.add(models.GameSession(quiz_id=quiz.id, room_code="PLAYED"))
-    db.commit()
+    make_session(db, quiz)
 
     res = client.delete(f"/quizzes/{quiz.id}", headers=auth_header(professor))
 
-    assert res.status_code == 409
-    assert db.query(models.Quiz).count() == 1
+    assert res.status_code == 200
+    db.expire_all()
+    assert db.query(models.Quiz).count() == 0
+    assert db.query(models.GameSession).count() == 1
+    assert db.query(models.SessionQuestion).count() == 1
+
+
+# --- times played and duplicating ---
+
+def test_quiz_list_counts_times_played(client, db, professor):
+    played = make_quiz(db, professor, "Played", questions=[question_data()])
+    make_quiz(db, professor, "Fresh")
+    make_session(db, played, "ONE111")
+    make_session(db, played, "TWO222")
+
+    quizzes = {q["title"]: q["times_played"] for q in client.get("/quizzes/", headers=auth_header(professor)).json()}
+
+    assert quizzes == {"Played": 2, "Fresh": 0}
+    assert client.get(f"/quizzes/{played.id}", headers=auth_header(professor)).json()["times_played"] == 2
+
+
+def test_duplicate_copies_questions_and_settings(client, db, professor):
+    db.add(models.Image(id="b" * 32, owner_id=professor.id, content_type="image/png", data=b"x"))
+    q = question_data(text="With picture", time_limit=None)
+    q.update(image_id="b" * 32, image_alt="Chart")
+    quiz = make_quiz(db, professor, "Week 5", questions=[q, question_data(text="Plain")],
+                     use_timer=False, auto_advance_results=False, speed_weight=0)
+    make_session(db, quiz)
+
+    res = client.post(f"/quizzes/{quiz.id}/duplicate", headers=auth_header(professor))
+
+    assert res.status_code == 200
+    copy = res.json()
+    assert copy["id"] != quiz.id
+    assert copy["title"] == "Copy of Week 5"
+    assert (copy["use_timer"], copy["auto_advance_results"], copy["speed_weight"]) == (False, False, 0)
+    assert copy["times_played"] == 0
+    assert [(c["text"], c["image_id"], c["time_limit_seconds"]) for c in copy["questions"]] == [
+        ("With picture", "b" * 32, None), ("Plain", None, 20),
+    ]
+
+
+def test_duplicate_is_owner_only(client, db, professor):
+    other = make_user(db, "other@csumb.edu", is_professor=True)
+    quiz = make_quiz(db, other, questions=[question_data()])
+    assert client.post(f"/quizzes/{quiz.id}/duplicate", headers=auth_header(professor)).status_code == 403

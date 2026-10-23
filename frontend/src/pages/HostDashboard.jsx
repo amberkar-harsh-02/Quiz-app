@@ -95,11 +95,25 @@ export default function HostDashboard() {
   };
 
   const deleteQuiz = async (quiz) => {
-    if (!window.confirm(`Delete "${quiz.title}"? This cannot be undone.`)) return;
+    const n = quiz.times_played ?? 0;
+    const confirmText = n > 0
+      ? `Delete "${quiz.title}"? Its ${n} past ${n === 1 ? 'game stays' : 'games stay'} in Analytics.`
+      : `Delete "${quiz.title}"? This cannot be undone.`;
+    if (!window.confirm(confirmText)) return;
     try {
       await apiFetch(`/quizzes/${quiz.id}`, { method: 'DELETE' });
       setQuizzes(quizzes.filter(q => q.id !== quiz.id));
       setMessage(null);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    }
+  };
+
+  const duplicateQuiz = async (quiz) => {
+    try {
+      const copy = await apiFetch(`/quizzes/${quiz.id}/duplicate`, { method: 'POST' });
+      await loadQuizzes();
+      setMessage({ type: 'success', text: `Made "${copy.title}".` });
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
     }
@@ -252,10 +266,11 @@ export default function HostDashboard() {
               <li key={quiz.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
                 <div className="min-w-0 flex-grow">
                   <h2 className="truncate text-lg font-bold">{quiz.title}</h2>
-                  <p className="text-sm text-muted">{quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}{quiz.use_timer === false && ', no timer'}</p>
+                  <p className="text-sm text-muted">{quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}{quiz.use_timer === false && ', no timer'}{quiz.times_played > 0 && `, played ${quiz.times_played} ${quiz.times_played === 1 ? 'time' : 'times'}`}</p>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => deleteQuiz(quiz)} className="hover:!bg-bad-soft hover:!text-bad">Delete</Button>
+                  <Button variant="ghost" size="sm" onClick={() => duplicateQuiz(quiz)}>Duplicate</Button>
                   <Button variant="secondary" size="sm" onClick={() => navigate(`/create/${quiz.id}`)}>Edit</Button>
                   <Button size="sm" onClick={() => hostGame(quiz.id)}>Host Game</Button>
                 </div>
