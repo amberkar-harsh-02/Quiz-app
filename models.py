@@ -53,6 +53,8 @@ class Quiz(Base):
     auto_advance_results = Column(Boolean, default=True, nullable=False)
     # Share (0-100 %) of a correct answer's 1000 points that depends on speed; 0 = correctness only
     speed_weight = Column(Integer, default=50, nullable=False)
+    # On: each student can download a PDF review of their game for 7 days
+    student_review_pdf = Column(Boolean, default=False, nullable=False)
 
     owner = relationship("User")
     questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
@@ -131,6 +133,8 @@ class StudentResult(Base):
     student_name = Column(String)
     total_score = Column(Integer)
     correct_answers = Column(Integer)
+    # Unguessable link to this student's review PDF; only set when the quiz allows reviews
+    review_token = Column(String, unique=True, index=True, nullable=True)
     
     session = relationship("GameSession", back_populates="results")
 

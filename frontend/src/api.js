@@ -12,6 +12,22 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
+// Downloads a file that needs sign-in (e.g. an analytics PDF) and saves it with the server's file name
+export async function apiDownload(path, fallbackName) {
+  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(typeof data?.detail === 'string' ? data.detail : `Download failed (${res.status})`);
+  }
+  const match = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = match?.[1] || fallbackName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // Decoded JWT payload ({ sub, is_professor, exp }), or null if missing or expired
 export function readToken() {
   const token = getToken();

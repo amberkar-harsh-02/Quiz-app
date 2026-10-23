@@ -155,6 +155,8 @@ export default function QuizBuilder() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   // Share (0-100 %) of a correct answer's points that depends on speed
   const [speedWeight, setSpeedWeight] = useState(50);
+  // On: students get a "Download my review (PDF)" button at the end of the game
+  const [studentReviewPdf, setStudentReviewPdf] = useState(false);
   const [questions, setQuestions] = useState(() => [emptyQuestion()]);
   const [isLoading, setIsLoading] = useState(Boolean(quizId));
   const [isSaving, setIsSaving] = useState(false);
@@ -174,6 +176,7 @@ export default function QuizBuilder() {
         setUseTimer(quiz.use_timer ?? true);
         setAutoAdvance(quiz.auto_advance_results ?? true);
         setSpeedWeight(quiz.speed_weight ?? 50);
+        setStudentReviewPdf(quiz.student_review_pdf ?? false);
         setTimesPlayed(quiz.times_played ?? 0);
         setQuestions(quiz.questions.map((q) => ({ ...q, key: crypto.randomUUID(), explanation: q.explanation ?? '', image_alt: q.image_alt ?? '' })));
       })
@@ -212,6 +215,7 @@ export default function QuizBuilder() {
       use_timer: useTimer,
       auto_advance_results: autoAdvance,
       speed_weight: speedWeight,
+      student_review_pdf: studentReviewPdf,
       questions: questions.map((q) => Object.fromEntries(QUESTION_FIELDS.map((f) => [f, q[f]]))),
     };
     const editing = Boolean(quizId);
@@ -280,6 +284,11 @@ export default function QuizBuilder() {
               : 'Results stay up after every question until you click Next Question.'}
           </SwitchRow>
           <ScoringRow weight={speedWeight} onChange={setSpeedWeight} />
+          <SwitchRow id="student-review" label="Let students download their review" checked={studentReviewPdf} onChange={setStudentReviewPdf}>
+            {studentReviewPdf
+              ? 'After the game, each student gets a button for a PDF of their answers, the correct answers and explanations. The link works for 7 days.'
+              : "Students who aren't signed in won't get a copy of their answers after the game."}
+          </SwitchRow>
         </Panel>
 
         <ol className="space-y-6">

@@ -107,7 +107,9 @@ After a timed question, the next question starts after a few seconds (10 when th
 
 ### 4. Game over
 
-After the last question, the server saves the session to the database and sends every student their final score, place and number correct. The room is then deleted.
+After the last question, the server saves the session to the database and sends every student their final score, place and number correct. The room is then deleted. The projector shows the final top 3 on a podium, revealed 3rd, then 2nd, then 1st, with a short confetti burst. Under reduced motion it appears at once without confetti.
+
+If the quiz has **Let students download their review** on, each student's result gets a random `review_token`, and their `game_over` message carries `review_url`. `GET /review/{token}.pdf` needs no sign-in, because the unguessable token is the key. It returns a PDF of that student's answers, the correct answers and the explanations, built from the game's saved copy of the questions. The link stops working after 7 days (410).
 
 The saved session includes a **copy of the questions as they were played** (`session_questions`), plus the quiz's title and owner. Analytics and students' reviews read only that copy. So the professor can later edit or delete the quiz without changing past results.
 
@@ -156,7 +158,7 @@ All messages are JSON objects with an `event` field.
 | host → server | `next_question` | Go to the next question |
 | server → host | `quiz_finished` | There are no more questions; the host then sends `end_game` |
 | host → server | `end_game` | Save results and close the room |
-| server → host | `game_over` | `session_id` of the saved session (or `null` if the game never started) |
+| server → host | `game_over` | `session_id` of the saved session (or `null` if the game never started), `top_players` (final top 3 with `rank`; ties share a rank) |
 
 ### Student (`/ws/student/{PIN}?student_name=…&token=…&player_id=…`)
 
@@ -167,7 +169,7 @@ All messages are JSON objects with an `event` field.
 | server → student | `show_question` | `text`, `time_limit`, `index`, `total`. **No answer texts.** |
 | student → server | `submit_answer` | `selected_option`: `red`, `blue`, `yellow` or `green` (A–D) |
 | server → student | `answer_result` | `correct`, `points_earned`, `selected_option`, `correct_option`, `correct_text`, `score`, `rank`, `total_players` |
-| server → student | `game_over` | `score`, `rank`, `total_players`, `correct_answers`, `total_questions`, `session_id` |
+| server → student | `game_over` | `score`, `rank`, `total_players`, `correct_answers`, `total_questions`, `session_id`, `review_url` (or `null` if reviews are off) |
 | server → student | `host_left` | The professor closed the game |
 
 `token` is optional (guests have none). `player_id` is only sent when reconnecting.
@@ -270,6 +272,9 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | POST | `/quizzes/{id}/questions/` 🔒 | Add one question |
 | GET | `/sessions/` 🔒 | Past games of your quizzes |
 | GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster |
+| GET | `/analytics/{session_id}/report.pdf` 🔒 | The same as a printable PDF class report |
+| GET | `/analytics/{session_id}/grades.csv` 🔒 | Grades for a gradebook. Cells starting with `=`, `+`, `-` or `@` get a leading `'`, so a nickname can't run as a spreadsheet formula. |
+| GET | `/review/{token}.pdf` | One student's review PDF (no sign-in; the token is the key; expires after 7 days) |
 | GET | `/student/history` 👤 | Your past games with answers, explanations and question images |
 | POST | `/images` 🔒 | Upload a JPG/PNG for a question; returns its `id` and `url` |
 | GET | `/images/{id}` | A question image (no sign-in) |
@@ -320,6 +325,7 @@ erDiagram
         bool use_timer
         bool auto_advance_results
         int speed_weight
+        bool student_review_pdf
     }
     Question {
         int id
@@ -360,6 +366,7 @@ erDiagram
         string student_name
         int total_score
         int correct_answers
+        string review_token
     }
     StudentAnswer {
         int id
@@ -379,6 +386,7 @@ erDiagram
 ```
 main.py                  FastAPI app: auth, REST endpoints, both WebSocket endpoints, scoring
 images.py                Checks, shrinks and strips metadata from uploaded question images
+pdfs.py                  Student review and class report PDFs (fpdf2, with the bundled font in fonts/)
 game_manager.py          In-memory rooms: create, join, reconnect, online count, broadcast
 models.py                SQLAlchemy tables
 schemas.py               Pydantic request/response models, including quiz validation

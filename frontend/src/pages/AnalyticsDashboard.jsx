@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiFetch, readToken } from '../api';
+import { apiDownload, apiFetch, readToken } from '../api';
 import { Alert, Button, Panel, Wordmark } from '../components/ui';
 import SpreadBars from '../components/host/SpreadBars';
 
@@ -36,6 +36,12 @@ export default function AnalyticsDashboard() {
     return <div className="flex h-screen items-center justify-center text-xl text-muted">Loading Analytics...</div>;
   }
 
+  const download = (file) => {
+    setError('');
+    apiDownload(`/analytics/${selectedSession.session_id}/${file}`, file)
+      .catch((err) => setError(`Couldn't download: ${err.message}`));
+  };
+
   const accuracyTone = (accuracy) => (accuracy >= 70 ? 'text-ok' : accuracy >= 40 ? 'text-warn' : 'text-bad');
 
   return (
@@ -53,6 +59,12 @@ export default function AnalyticsDashboard() {
             <Button variant="ghost" size="sm" onClick={() => setSelectedSession(null)}>&larr; Back to Archive</Button>
           )}
           <h1 className="text-3xl font-bold tracking-tight">{selectedSession ? selectedSession.quiz_title : 'Analytics'}</h1>
+          {selectedSession && (
+            <div className="ml-auto flex gap-2">
+              <Button variant="secondary" size="sm" onClick={() => download('report.pdf')}>Download PDF report</Button>
+              <Button variant="secondary" size="sm" onClick={() => download('grades.csv')}>Download grades (CSV)</Button>
+            </div>
+          )}
         </div>
 
         {error && <div className="mb-6"><Alert>{error}</Alert></div>}

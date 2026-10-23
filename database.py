@@ -44,3 +44,10 @@ def add_missing_columns(bind):
             conn.execute(text("ALTER TABLE quizzes ADD COLUMN auto_advance_results BOOLEAN NOT NULL DEFAULT 1"))
         if columns and "speed_weight" not in columns:
             conn.execute(text("ALTER TABLE quizzes ADD COLUMN speed_weight INTEGER NOT NULL DEFAULT 50"))
+        if columns and "student_review_pdf" not in columns:
+            conn.execute(text("ALTER TABLE quizzes ADD COLUMN student_review_pdf BOOLEAN NOT NULL DEFAULT 0"))
+
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(student_results)"))}
+        if columns and "review_token" not in columns:
+            conn.execute(text("ALTER TABLE student_results ADD COLUMN review_token TEXT"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_student_results_review_token ON student_results (review_token)"))

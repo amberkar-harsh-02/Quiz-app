@@ -55,6 +55,14 @@ export default {
           '0%': { opacity: '1' },
           '100%': { opacity: '0.5' },
         },
+        'rise-up': {
+          '0%': { transform: 'scaleY(0)' },
+          '100%': { transform: 'scaleY(1)' },
+        },
+        'confetti-fall': {
+          '0%': { transform: 'translate(0, 0) rotate(0deg)', opacity: '1' },
+          '100%': { transform: 'translate(var(--drift, 0px), 105vh) rotate(720deg)', opacity: '0.9' },
+        },
         settle: {
           '0%': { opacity: '0', transform: 'scale(0.96)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
@@ -67,6 +75,8 @@ export default {
         'grow-x': 'grow-x 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
         'slide-down': 'slide-down 180ms ease-out both',
         settle: 'settle 200ms ease-out both',
+        'rise-up': 'rise-up 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
+        'confetti-fall': 'confetti-fall 2.8s cubic-bezier(0.3, 0.6, 0.6, 1) both',
         dim: 'dim 300ms ease-out 300ms both',
       },
     },

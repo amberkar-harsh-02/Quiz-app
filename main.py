@@ -1,4 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, File, UploadFile, Response
+import csv
+import io
 import json
 import secrets
 import time
@@ -9,6 +11,7 @@ from database import engine, SessionLocal, add_missing_columns
 import models, schemas
 from game_manager import manager
 from images import MAX_UPLOAD_BYTES, clean_image
+from pdfs import class_report_pdf, review_pdf
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
@@ -45,6 +48,8 @@ UNTIMED_FULL_BONUS_SECONDS = 5
 # ...fading to no bonus at this many seconds
 UNTIMED_NO_BONUS_SECONDS = 60
 MAX_NICKNAME_LENGTH = 20
+# How long a student's review PDF link keeps working after the game
+REVIEW_LINK_DAYS = 7
 COLORS = ("red", "blue", "yellow", "green")
 
 if not SECRET_KEY:
@@ -114,6 +119,8 @@ app.add_middleware(
     allow_origin_regex=None if frontend_origins else r"https?://[^/]+:5173",
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the analytics page read the file name of a downloaded report
+    expose_headers=["Content-Disposition"],
 )
 
 # Dependency to safely open and close a database session per request
@@ -376,6 +383,7 @@ def save_quiz(db: Session, quiz: models.Quiz, payload: schemas.FullQuizPayload) 
     quiz.use_timer = payload.use_timer
     quiz.auto_advance_results = payload.auto_advance_results
     quiz.speed_weight = payload.speed_weight
+    quiz.student_review_pdf = payload.student_review_pdf
     quiz.questions = [models.Question(**q.model_dump()) for q in payload.questions]
     db.add(quiz)
     db.commit()
@@ -489,7 +497,7 @@ def duplicate_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: mo
     copy = models.Quiz(
         title=f"Copy of {original.title}", owner_id=current_user.id,
         use_timer=original.use_timer, auto_advance_results=original.auto_advance_results,
-        speed_weight=original.speed_weight,
+        speed_weight=original.speed_weight, student_review_pdf=original.student_review_pdf,
         # Images are shared, not copied; they're only deleted once nothing uses them
         questions=[
             models.Question(**{f: getattr(q, f) for f in (
@@ -531,15 +539,113 @@ def get_past_sessions(db: Session = Depends(get_db), current_user: models.User =
     return result
 
 
-@app.get("/analytics/{session_id}")
-def get_session_analytics(session_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+def owned_session(db: Session, session_id: int, user: models.User) -> models.GameSession:
     game_session = db.query(models.GameSession).filter(models.GameSession.id == session_id).first()
     if not game_session:
         raise HTTPException(status_code=404, detail="Game session not found.")
-
-    if game_session.owner_id != current_user.id:
+    if game_session.owner_id != user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this session.")
+    return game_session
 
+def played_on(session: models.GameSession) -> str:
+    return session.created_at.strftime("%B %d, %Y").replace(" 0", " ") if session.created_at else "unknown date"
+
+def download_name(title: str, suffix: str) -> str:
+    safe = "".join(c if c.isalnum() else "-" for c in title).strip("-").lower() or "quiz"
+    return f"{safe[:60]}-{suffix}"
+
+@app.get("/analytics/{session_id}")
+def get_session_analytics(session_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    return session_analytics(db, owned_session(db, session_id, current_user))
+
+@app.get("/analytics/{session_id}/report.pdf")
+def download_class_report(session_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    game_session = owned_session(db, session_id, current_user)
+    data = class_report_pdf(
+        analytics=session_analytics(db, game_session),
+        questions=[
+            {"text": q.text, "correct_option": q.correct_option, "correct_text": getattr(q, f"option_{q.correct_option}", "")}
+            for q in game_session.questions
+        ],
+        room_code=game_session.room_code,
+        played_on=played_on(game_session),
+    )
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="{download_name(game_session.quiz_title or "quiz", "report.pdf")}"',
+    })
+
+def csv_safe(value) -> str:
+    # A nickname like "=HYPERLINK(...)" would run as a formula when the CSV is opened in a spreadsheet
+    text_value = str(value)
+    return "'" + text_value if text_value[:1] in ("=", "+", "-", "@") else text_value
+
+@app.get("/analytics/{session_id}/grades.csv")
+def download_grades(session_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
+    game_session = owned_session(db, session_id, current_user)
+    total = len(game_session.questions)
+    results = db.query(models.StudentResult).filter(models.StudentResult.session_id == session_id).order_by(models.StudentResult.total_score.desc()).all()
+    emails = {u.id: u.email for u in db.query(models.User).filter(models.User.id.in_([r.user_id for r in results if r.user_id]))}
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["name", "email", "score", "correct", "total_questions", "accuracy_percent"])
+    for r in results:
+        writer.writerow([
+            csv_safe(r.student_name), emails.get(r.user_id, ""), r.total_score, r.correct_answers, total,
+            round(r.correct_answers / total * 100) if total else 0,
+        ])
+    return Response(content=out.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="{download_name(game_session.quiz_title or "quiz", "grades.csv")}"',
+    })
+
+@app.get("/review/{token}.pdf")
+def download_review(token: str, db: Session = Depends(get_db)):
+    # No sign-in: guests use this too. The random token is the key, and it stops working after a week.
+    result = db.query(models.StudentResult).filter(models.StudentResult.review_token == token).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    session = db.query(models.GameSession).filter(models.GameSession.id == result.session_id).first()
+    if not session or not session.created_at or datetime.utcnow() - session.created_at > timedelta(days=REVIEW_LINK_DAYS):
+        raise HTTPException(status_code=410, detail="This review link has expired.")
+
+    answers = {a.question_id: a for a in db.query(models.StudentAnswer).filter(models.StudentAnswer.result_id == result.id)}
+    scores = [r.total_score for r in db.query(models.StudentResult.total_score).filter(models.StudentResult.session_id == session.id)]
+    images = {
+        i.id: i for i in db.query(models.Image).filter(models.Image.id.in_([q.image_id for q in session.questions if q.image_id]))
+    }
+    questions = []
+    for number, q in enumerate(session.questions, start=1):
+        answer = answers.get(q.question_id)
+        image = images.get(q.image_id)
+        questions.append({
+            "number": number,
+            "text": q.text,
+            "image": (image.data, image.width, image.height) if image else None,
+            "selected": answer.selected_option if answer else None,
+            "selected_text": getattr(q, f"option_{answer.selected_option}", "") if answer else "",
+            "correct_option": q.correct_option,
+            "correct_text": getattr(q, f"option_{q.correct_option}", ""),
+            "explanation": q.explanation or "",
+        })
+
+    data = review_pdf(
+        quiz_title=session.quiz_title or "Quiz",
+        played_on=played_on(session),
+        student_name=result.student_name,
+        score=result.total_score,
+        rank=1 + sum(1 for s in scores if s > result.total_score),
+        total_players=len(scores),
+        correct=result.correct_answers,
+        questions=questions,
+    )
+    return Response(content=data, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="{download_name(session.quiz_title or "quiz", "review.pdf")}"',
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+def session_analytics(db: Session, game_session: models.GameSession) -> dict:
+    session_id = game_session.id
     results = db.query(models.StudentResult).filter(models.StudentResult.session_id == session_id).all()
     # The questions as they were played, even if the quiz was edited or deleted since
     questions = game_session.questions
@@ -819,6 +925,7 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
         db.expunge_all()
         auto_advance_results = quiz.auto_advance_results
         speed_weight = quiz.speed_weight
+        reviews_enabled = quiz.student_review_pdf
     finally:
         db.close()
 
@@ -875,12 +982,15 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
 
                         for student in room["students"].values():
                             history = student.get("history", [])
+                            if reviews_enabled:
+                                student["review_token"] = secrets.token_urlsafe(24)
                             result = models.StudentResult(
                                 session_id=game_session.id,
                                 student_name=student["name"],
                                 total_score=student["score"],
                                 correct_answers=sum(1 for ans in history if ans["is_correct"] == 1),
-                                user_id=student.get("user_id")
+                                user_id=student.get("user_id"),
+                                review_token=student.get("review_token"),
                             )
                             db.add(result)
                             db.flush()
@@ -908,11 +1018,18 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                             "total_players": len(room["students"]),
                             "correct_answers": sum(1 for ans in student.get("history", []) if ans["is_correct"] == 1),
                             "total_questions": total_questions,
+                            # Only when the professor allows reviews and the game was saved
+                            "review_url": f"/review/{student['review_token']}.pdf" if final_session_id and student.get("review_token") else None,
                         })
 
+                ranked = sorted(room["students"].values(), key=lambda s: s["score"], reverse=True)
                 await websocket.send_json({
                     "event": "game_over",
-                    "session_id": final_session_id
+                    "session_id": final_session_id,
+                    # Final podium; tied scores share a place
+                    "top_players": [
+                        {"name": s["name"], "score": s["score"], "rank": rank_of(room, s)} for s in ranked[:3]
+                    ] if total_questions else [],
                 })
 
                 del manager.active_rooms[room_code]

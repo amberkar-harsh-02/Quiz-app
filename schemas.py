@@ -47,6 +47,7 @@ class QuizBase(BaseModel):
     use_timer: bool = True
     auto_advance_results: bool = True
     speed_weight: int = 50
+    student_review_pdf: bool = False
 
 class QuizCreate(QuizBase):
     pass
@@ -84,6 +85,8 @@ class FullQuizPayload(BaseModel):
     auto_advance_results: bool = True
     # % of a correct answer's 1000 points that depends on speed; 0 = only correctness counts
     speed_weight: int = Field(default=50, ge=0, le=100)
+    # true = students get a "Download my review (PDF)" button at the end of the game
+    student_review_pdf: bool = False
     questions: List[QuestionBuilderItem] = Field(min_length=1)
 
 class GoogleAuthRequest(BaseModel):

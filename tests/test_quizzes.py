@@ -91,6 +91,13 @@ def test_builder_saves_scoring_weight(client, professor):
     assert too_much.status_code == 422
 
 
+def test_builder_saves_student_review_setting(client, professor):
+    payload = {"title": "Reviewable", "student_review_pdf": True, "questions": [builder_question()]}
+    assert client.post("/quizzes/builder", json=payload, headers=auth_header(professor)).json()["student_review_pdf"] is True
+    default = client.post("/quizzes/builder", json={"title": "T", "questions": [builder_question()]}, headers=auth_header(professor))
+    assert default.json()["student_review_pdf"] is False
+
+
 def test_builder_saves_results_pacing(client, professor):
     payload = {"title": "Paced", "auto_advance_results": False, "questions": [builder_question()]}
     res = client.post("/quizzes/builder", json=payload, headers=auth_header(professor))
@@ -346,6 +353,7 @@ def test_duplicate_copies_questions_and_settings(client, db, professor):
     assert copy["id"] != quiz.id
     assert copy["title"] == "Copy of Week 5"
     assert (copy["use_timer"], copy["auto_advance_results"], copy["speed_weight"]) == (False, False, 0)
+    assert copy["student_review_pdf"] is False
     assert copy["times_played"] == 0
     assert [(c["text"], c["image_id"], c["time_limit_seconds"]) for c in copy["questions"]] == [
         ("With picture", "b" * 32, None), ("Plain", None, 20),

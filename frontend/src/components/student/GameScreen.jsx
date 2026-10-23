@@ -176,10 +176,24 @@ function GameOverView({ final, isSignedIn, onExit, onReview }) {
 
       <div className="mt-8 flex w-full max-w-xs flex-col gap-3">
         {isSignedIn && final.session_id && <Button size="lg" onClick={() => onReview(final.session_id)} className={ON_STAGE_PRIMARY}>Review answers</Button>}
+        {final.review_url && (
+          <>
+            <a
+              href={assetUrl(final.review_url)}
+              download
+              className="inline-flex min-h-14 items-center justify-center rounded-control border border-white/25 px-7 text-lg font-bold text-white transition-colors hover:bg-white/10"
+            >
+              Download my review (PDF)
+            </a>
+            <p className="-mt-1 text-sm text-white/60">Your answers, the correct answers and explanations. The link works for 7 days.</p>
+          </>
+        )}
         <Button variant="stage" size="lg" onClick={onExit}>Back to menu</Button>
         {!isSignedIn && (
           <p className="mt-2 text-sm text-white/60">
-            Sign in with your @csumb.edu account next time to keep your results and review the answers.
+            {final.review_url
+              ? 'Sign in with your @csumb.edu account next time to keep all your results in one place.'
+              : 'Sign in with your @csumb.edu account next time to keep your results and review the answers.'}
           </p>
         )}
       </div>

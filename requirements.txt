@@ -13,3 +13,5 @@ requests==2.34.2
 python-multipart==0.0.32
 # Checks, shrinks and strips metadata from question images
 pillow==12.3.0
+# Review and class-report PDFs
+fpdf2==2.8.9

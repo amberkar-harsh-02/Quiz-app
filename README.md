@@ -99,7 +99,11 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    - They're checked to be real images, resized to at most 1600 px, and re-saved, which removes hidden metadata such as a phone photo's location.
    - Add an **Image description** for students who use screen readers.
    - The image shows on the projector, on students' screens (tap to enlarge) and in their review.
-6. **Review.** After the last question, results are saved. Open **View Analytics** for per-question and per-student results.
+6. **Review.** After the last question, the projector reveals the top 3 on a podium and results are saved. Open **View Analytics** for per-question and per-student results.
+   - **Download PDF report:** a printable class report with the overview, every question's results and the roster.
+   - **Download grades (CSV):** name, email (for signed-in students), score, correct answers and accuracy, ready for a gradebook import. Nicknames that look like spreadsheet formulas are neutralised.
+
+   **Review PDFs for students:** turn on **Let students download their review** in the quiz editor (off by default). At the end of the game, each student's screen then shows **Download my review (PDF)**. The PDF has their answers, the correct answers and the explanations, and works for guests too. Each link is unique to that student and stops working after 7 days.
 
 | Start page | My Quizzes | Quiz builder |
 | --- | --- | --- |
@@ -137,6 +141,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 | `use_timer` | No | `false` turns off timers for the whole quiz. Default `true`. |
 | `auto_advance_results` | No | `false` makes the results screen after every question wait for **Next Question**. Default `true`. |
 | `speed_weight` | No | 0–100: how many percent of a correct answer's 1000 points depend on speed. `0` = correct answers only. Default `50`. |
+| `student_review_pdf` | No | `true` gives each student a "Download my review (PDF)" button after the game. Default `false`. |
 | `text` | Yes | The question. |
 | `option_red` … `option_green` | Yes | The four answers, shown to players as **A, B, C, D** in that order. |
 | `correct_option` | Yes | `red`, `blue`, `yellow` or `green` (A, B, C or D). |

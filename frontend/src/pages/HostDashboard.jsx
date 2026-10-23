@@ -25,6 +25,7 @@ export default function HostDashboard() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [reveal, setReveal] = useState(null); // correct answer, spread and explanation for the question just closed
   const [savedSessionId, setSavedSessionId] = useState(null);
+  const [finalTop, setFinalTop] = useState([]);
 
   // Leaderboard auto-advance timer
   const [leaderboardTimeLeft, setLeaderboardTimeLeft] = useState(5);
@@ -171,6 +172,7 @@ export default function HostDashboard() {
       } else if (data.event === 'game_over') {
         finished = true;
         setSavedSessionId(data.session_id);
+        setFinalTop(data.top_players ?? []);
         setView('game_over');
       }
     };
@@ -215,6 +217,7 @@ export default function HostDashboard() {
         {view === 'game_over' && (
           <GameOverStage
             saved={Boolean(savedSessionId)}
+            topPlayers={finalTop}
             onDashboard={() => {
               ws.current?.close();
               loadQuizzes().catch(() => {});
