@@ -28,26 +28,76 @@ const emptyQuestion = () => ({
   image_id: null, image_alt: '',
 });
 
-function ScoringRow({ weight, onChange }) {
+// One choice instead of two switches: "Use a timer" and "Move on from results automatically"
+const PACES = [
+  { id: 'timed', label: 'Timed', text: 'Questions close when time runs out, and the game moves on by itself.' },
+  { id: 'timed-manual', label: 'Timed, I move on', text: 'Questions close when time runs out. Results wait for you to click Next Question.' },
+  { id: 'manual', label: 'I run it', text: 'No timers. You show the results and move on yourself.' },
+];
+
+const paceOf = (useTimer, autoAdvance) => (!useTimer ? 'manual' : autoAdvance ? 'timed' : 'timed-manual');
+
+const presetFor = (weight) => SCORING_PRESETS.find((p) => p.value === weight);
+
+function scoringSummary(weight) {
+  const preset = presetFor(weight);
+  return preset ? `Scoring: ${preset.label.toLowerCase()}` : `Scoring: speed counts ${weight}%`;
+}
+
+// Selectable option styled as a card or a segment; the real radio stays for keyboard and screen readers
+const choiceClass = (selected) =>
+  `cursor-pointer transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand has-[:focus-visible]:ring-offset-2 ${
+    selected ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:border-muted hover:text-ink'
+  }`;
+
+function PaceChoice({ pace, onChange }) {
   return (
-    <div className="p-4">
-      <p id="scoring-label" className="font-bold">Scoring</p>
-      <p className="mb-3 text-sm text-muted">{scoringSentence(weight)}</p>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby="scoring-label">
-        {SCORING_PRESETS.map((preset) => (
-          <button
-            key={preset.value}
-            type="button"
-            aria-pressed={weight === preset.value}
-            onClick={() => onChange(preset.value)}
-            className={`rounded-chip border px-3 py-1.5 text-sm font-bold transition-colors ${
-              weight === preset.value ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:border-muted hover:text-ink'
-            }`}
-          >
-            {preset.label}
-          </button>
+    <fieldset className="p-4">
+      <legend className="float-left mb-3 w-full font-bold">Pace</legend>
+      <div className="clear-both grid gap-3 sm:grid-cols-3">
+        {PACES.map((option) => (
+          <label key={option.id} className={`rounded-control border bg-white p-4 ${choiceClass(pace === option.id)}`}>
+            <input type="radio" name="pace" value={option.id} checked={pace === option.id} onChange={() => onChange(option.id)} className="sr-only" />
+            <span className="block font-bold">{option.label}</span>
+            <span className="mt-1 block text-sm text-muted">{option.text}</span>
+          </label>
         ))}
-        <label className="ml-auto flex items-center gap-3 text-sm text-muted">
+      </div>
+      {pace !== 'manual' && (
+        <p className="mt-3 text-sm text-muted">You can still set a single question to &quot;No timer&quot; to run just that one yourself.</p>
+      )}
+    </fieldset>
+  );
+}
+
+function ScoringChoice({ weight, onChange }) {
+  // Custom shows the slider; a saved weight that isn't a preset opens as Custom
+  const [custom, setCustom] = useState(() => !presetFor(weight));
+  const options = [...SCORING_PRESETS, { label: 'Custom', value: null }];
+  const isSelected = (option) => (option.value === null ? custom : !custom && weight === option.value);
+
+  return (
+    <fieldset className="p-4">
+      <legend className="float-left mb-3 w-full font-bold">Scoring</legend>
+      <div className="clear-both flex flex-wrap gap-2">
+        {options.map((option) => (
+          <label key={option.label} className={`rounded-chip border px-3 py-1.5 text-sm font-bold ${choiceClass(isSelected(option))}`}>
+            <input
+              type="radio"
+              name="scoring"
+              checked={isSelected(option)}
+              onChange={() => {
+                setCustom(option.value === null);
+                if (option.value !== null) onChange(option.value);
+              }}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {custom && (
+        <label className="mt-4 flex items-center gap-3 text-sm text-muted motion-safe:animate-rise">
           Speed counts for
           <input
             type="range"
@@ -56,12 +106,13 @@ function ScoringRow({ weight, onChange }) {
             step={10}
             value={weight}
             onChange={(e) => onChange(Number(e.target.value))}
-            className="w-40 accent-[#1F4F8F]"
+            className="w-48 accent-[#1F4F8F]"
           />
           <span className="w-10 text-right font-mono font-bold text-ink">{weight}%</span>
         </label>
-      </div>
-    </div>
+      )}
+      <p className="mt-3 text-sm text-muted">{scoringSentence(weight)}</p>
+    </fieldset>
   );
 }
 
@@ -164,7 +215,16 @@ export default function QuizBuilder() {
   // Finished games of this quiz; they keep their own copy of the questions, so editing is safe
   const [timesPlayed, setTimesPlayed] = useState(0);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const pace = paceOf(useTimer, autoAdvance);
+
   const navigate = useNavigate();
+
+  const choosePace = (id) => {
+    setUseTimer(id !== 'manual');
+    // With no timer the results always wait for the professor, so "move on" is left as it was
+    if (id !== 'manual') setAutoAdvance(id === 'timed');
+  };
 
   useEffect(() => {
     if (!readToken()) { navigate('/'); return; }
@@ -272,23 +332,35 @@ export default function QuizBuilder() {
           />
         </Field>
 
-        <Panel className="mb-8 divide-y divide-line">
-          <SwitchRow id="use-timer" label="Use a timer" checked={useTimer} onChange={setUseTimer}>
-            {useTimer
-              ? 'Each question closes when its time runs out. Pick "No timer" on a question to run just that one yourself.'
-              : 'No timers in this quiz. Questions stay open until everyone answers or you show the results.'}
-          </SwitchRow>
-          <SwitchRow id="auto-advance" label="Move on from results automatically" checked={autoAdvance} onChange={setAutoAdvance}>
-            {autoAdvance
-              ? 'After a timed question, results show for 5–10 seconds, then the next question starts. Questions with no timer always wait for you.'
-              : 'Results stay up after every question until you click Next Question.'}
-          </SwitchRow>
-          <ScoringRow weight={speedWeight} onChange={setSpeedWeight} />
-          <SwitchRow id="student-review" label="Let students download their review" checked={studentReviewPdf} onChange={setStudentReviewPdf}>
-            {studentReviewPdf
-              ? 'After the game, each student gets a button for a PDF of their answers, the correct answers and explanations. The link works for 7 days.'
-              : "Students who aren't signed in won't get a copy of their answers after the game."}
-          </SwitchRow>
+        <Panel className="mb-8">
+          <div className="flex items-center gap-4 p-4">
+            <div className="min-w-0 flex-grow">
+              <h2 className="font-bold">Game settings</h2>
+              <p className="text-sm text-muted">
+                {PACES.find((p) => p.id === pace).label} · {scoringSummary(speedWeight)} · Student PDFs {studentReviewPdf ? 'on' : 'off'}
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-expanded={settingsOpen}
+              aria-controls={settingsOpen ? 'game-settings' : undefined}
+              onClick={() => setSettingsOpen(!settingsOpen)}
+            >
+              {settingsOpen ? 'Done' : 'Change'}
+            </Button>
+          </div>
+          {settingsOpen && (
+            <div id="game-settings" className="divide-y divide-line border-t border-line motion-safe:animate-rise">
+              <PaceChoice pace={pace} onChange={choosePace} />
+              <ScoringChoice weight={speedWeight} onChange={setSpeedWeight} />
+              <SwitchRow id="student-review" label="Let students download their review" checked={studentReviewPdf} onChange={setStudentReviewPdf}>
+                {studentReviewPdf
+                  ? 'After the game, each student gets a button for a PDF of their answers, the correct answers and explanations. The link works for 7 days.'
+                  : "Students who aren't signed in won't get a copy of their answers after the game."}
+              </SwitchRow>
+            </div>
+          )}
         </Panel>
 
         <ol className="space-y-6">

@@ -1,4 +1,5 @@
 // Small shared building blocks so every page uses the same buttons, fields and messages
+import { useEffect, useRef, useState } from 'react';
 
 const BUTTON_VARIANTS = {
   primary: 'bg-brand text-white hover:bg-brand-dark',
@@ -59,6 +60,87 @@ export function Alert({ tone = 'error', children, action, onDismiss }) {
 
 export function Panel({ as: Tag = 'section', className = '', ...props }) {
   return <Tag className={`rounded-panel border border-line bg-white ${className}`} {...props} />;
+}
+
+// "⋯" button with a dropdown of less-used actions. items: { label, onSelect, tone: 'danger' } or { divider: true }
+export function Menu({ label, items }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const itemRefs = useRef([]);
+
+  useEffect(() => {
+    if (!open) return;
+    itemRefs.current[0]?.focus();
+    const closeOutside = (e) => { if (!rootRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', closeOutside);
+    return () => document.removeEventListener('mousedown', closeOutside);
+  }, [open]);
+
+  const choose = (item) => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    item.onSelect();
+  };
+
+  const onKeyDown = (e) => {
+    const list = itemRefs.current.filter(Boolean);
+    const at = list.indexOf(document.activeElement);
+    const go = (i) => { e.preventDefault(); list[(i + list.length) % list.length].focus(); };
+    if (e.key === 'ArrowDown') go(at + 1);
+    else if (e.key === 'ArrowUp') go(at - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(list.length - 1);
+    else if (e.key === 'Escape') { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
+    else if (e.key === 'Tab') setOpen(false);
+  };
+
+  let actionIndex = 0;
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className={`inline-flex min-h-9 w-9 items-center justify-center rounded-control text-muted transition-colors hover:bg-ink/5 hover:text-ink ${open ? 'bg-ink/5 text-ink' : ''}`}
+      >
+        <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor">
+          <circle cx="4" cy="10" r="1.7" /><circle cx="10" cy="10" r="1.7" /><circle cx="16" cy="10" r="1.7" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={label}
+          onKeyDown={onKeyDown}
+          className="absolute right-0 top-full z-20 mt-1 min-w-48 origin-top-right rounded-control border border-line bg-white p-1 shadow-[0_12px_32px_rgba(23,32,51,0.14)] motion-safe:animate-settle"
+        >
+          {items.map((item, i) => {
+            if (item.divider) return <div key={i} role="separator" className="my-1 h-px bg-line" />;
+            const index = actionIndex++;
+            return (
+              <button
+                key={i}
+                ref={(el) => { itemRefs.current[index] = el; }}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => choose(item)}
+                className={`flex w-full items-center rounded-chip px-3 py-2 text-left text-sm font-bold transition-colors ${
+                  item.tone === 'danger' ? 'text-bad hover:bg-bad-soft focus:bg-bad-soft' : 'text-ink hover:bg-ink/5 focus:bg-ink/5'
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Same PIN field on the guest form and the student dashboard

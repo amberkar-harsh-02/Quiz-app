@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WS_URL, apiDownload, apiFetch, clearToken, getToken, readToken } from '../api';
-import { Alert, Button, Panel, Wordmark } from '../components/ui';
+import { Alert, Button, Menu, Panel, Wordmark } from '../components/ui';
 import Stage from '../components/host/Stage';
 import Lobby from '../components/host/Lobby';
 import QuestionStage from '../components/host/QuestionStage';
@@ -276,12 +276,18 @@ export default function HostDashboard() {
                   <h2 className="truncate text-lg font-bold">{quiz.title}</h2>
                   <p className="text-sm text-muted">{quiz.questions.length} {quiz.questions.length === 1 ? 'question' : 'questions'}{quiz.use_timer === false && ', no timer'}{quiz.times_played > 0 && `, played ${quiz.times_played} ${quiz.times_played === 1 ? 'time' : 'times'}`}</p>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => deleteQuiz(quiz)} className="hover:!bg-bad-soft hover:!text-bad">Delete</Button>
-                  <Button variant="ghost" size="sm" onClick={() => duplicateQuiz(quiz)}>Duplicate</Button>
-                  <Button variant="ghost" size="sm" onClick={() => downloadSolutions(quiz)}>Solutions PDF</Button>
+                <div className="flex items-center gap-2">
                   <Button variant="secondary" size="sm" onClick={() => navigate(`/create/${quiz.id}`)}>Edit</Button>
                   <Button size="sm" onClick={() => hostGame(quiz.id)}>Host Game</Button>
+                  <Menu
+                    label={`More actions for ${quiz.title}`}
+                    items={[
+                      { label: 'Duplicate', onSelect: () => duplicateQuiz(quiz) },
+                      { label: 'Solutions PDF', onSelect: () => downloadSolutions(quiz) },
+                      { divider: true },
+                      { label: 'Delete…', tone: 'danger', onSelect: () => deleteQuiz(quiz) },
+                    ]}
+                  />
                 </div>
               </li>
             ))}

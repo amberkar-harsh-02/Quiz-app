@@ -103,7 +103,7 @@ The results screen is laid out like a question in Analytics:
 - **Left:** the accuracy, a bar per answer with its count and share, and a "No answer" row.
 - **Right:** the explanation and the top 5.
 
-After a timed question, the next question starts after a few seconds (10 when there's an explanation, otherwise 5). The professor can also click **Skip Delay** or **End Game Early**. After a question with no timer, or in a quiz with **Move on from results automatically** turned off, the results stay up until the professor clicks **Next Question**.
+After a timed question, the next question starts after a few seconds (10 when there's an explanation, otherwise 5). The professor can also click **Skip Delay** or **End Game Early**. After a question with no timer, or in a quiz with the pace set to **Timed, I move on**, the results stay up until the professor clicks **Next Question**.
 
 ### 4. Game over
 
@@ -180,9 +180,8 @@ Two quiz settings and one question setting decide how a game moves along. All ar
 
 | Setting | Where | Effect |
 | --- | --- | --- |
-| **Use a timer** (`Quiz.use_timer`) | Quiz | Off: no question in the quiz has a countdown |
+| **Pace** (`Quiz.use_timer`, `Quiz.auto_advance_results`) | Quiz | **Timed** = timer on, results move on by themselves. **Timed, I move on** = timer on, `auto_advance_results` off, so the results screen after every question waits for the professor. **I run it** = `use_timer` off, so no question has a countdown. |
 | **Time limit** (`Question.time_limit_seconds`) | Question | 5–120 seconds, or **No timer** (`null`) |
-| **Move on from results automatically** (`Quiz.auto_advance_results`) | Quiz | Off: the results screen after every question waits for the professor |
 
 A question runs **without a timer** when the quiz's timer is off or the question is set to "No timer". For such a question:
 

@@ -76,22 +76,29 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    To give other professors or TAs access, open **Staff** in the top bar, type their `@csumb.edu` email and click **Add**. They don't need an account yet. They can host as soon as they sign up, or straight away if they already have an account. **Remove** takes access away again; their quizzes are kept.
 2. **Add a quiz.** Click **+ Create Quiz** to build one, or **Upload JSON** to import a file (format below).
 
-   You can **Edit**, **Duplicate** or **Delete** any quiz at any time, including ones you've already played:
+   Each quiz in My Quizzes has **Edit** and **Host Game**. The rest are in its **⋯** menu. All of them work on quizzes you've already played:
    - **Edit:** changes apply to future games. Past results in Analytics and in students' reviews keep the questions exactly as they were played.
    - **Duplicate:** makes "Copy of …" with the same questions, images and settings.
-   - **Delete:** removes the quiz from My Quizzes. Its past games stay in Analytics.
    - **Solutions PDF:** an answer key with every question, its four options with the correct one marked, and the explanation. Handy to share after class.
+   - **Delete…:** removes the quiz from My Quizzes, after you confirm. Its past games stay in Analytics.
+
+   The quiz editor's settings sit in one **Game settings** card under the title. It shows a one-line summary (for example "Timed · Scoring: balanced · Student PDFs off"); click **Change** to open it.
 3. **Host it.** Click **Host Game**. The projector view shows the room PIN.
 4. **Join as students.** Open `http://localhost:5173` in other tabs, enter the PIN and a nickname under **Play as guest**. Students with a `@csumb.edu` account can sign in instead, which saves their results for review.
 5. **Start.** Click **Start Game**. Each question closes when the timer runs out or everyone has answered. The projector then shows the answer spread, the explanation and the top 3.
 
-   **Running it yourself:** in the quiz editor, turn off **Use a timer** for the whole quiz, or set a question's time limit to **No timer**. Those questions stay open until everyone has answered or you click **Show Results**. Their results then wait for you to click **Next Question**. To control the pace after every question, turn off **Move on from results automatically** as well.
+   **Running it yourself:** under **Game settings → Pace**, pick one of:
+   - **Timed** (the default): questions close when time runs out, and the game moves on by itself.
+   - **Timed, I move on:** questions are still timed, but the results after each one wait for you to click **Next Question**.
+   - **I run it:** no timers. Questions stay open until everyone has answered or you click **Show Results**, and their results wait for **Next Question**.
+
+   In a timed quiz you can also set a single question's time limit to **No timer** to run just that one yourself.
 
    **Scoring:** a correct answer is worth up to 1000 points. Under **Scoring** in the quiz editor, choose how much of that depends on speed:
    - **Correct answers only** (0%): every correct answer earns 1000, however long it took.
    - **Balanced** (50%, the default): 500 for being correct plus up to 500 for speed.
    - **Speed matters** (75%).
-   - Or any value on the slider, in 10% steps.
+   - **Custom:** shows a slider for any value, in 10% steps.
 
    Wrong answers always score 0.
 
@@ -106,7 +113,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    - **Download grades (CSV):** name, email (for signed-in students), score, correct answers and accuracy, ready for a gradebook import. Nicknames that look like spreadsheet formulas are neutralised.
    - **PDF** next to a student in the roster: that student's review (their answers, the correct answers and explanations), e.g. to email to someone who played as a guest. It works whether or not student reviews were turned on, and doesn't expire.
 
-   **Review PDFs for students:** turn on **Let students download their review** in the quiz editor (off by default). At the end of the game, each student's screen then shows **Download my review (PDF)**. The PDF has their answers, the correct answers and the explanations, and works for guests too. Each link is unique to that student and stops working after 7 days.
+   **Review PDFs for students:** turn on **Let students download their review** under **Game settings** in the quiz editor (off by default). At the end of the game, each student's screen then shows **Download my review (PDF)**. The PDF has their answers, the correct answers and the explanations, and works for guests too. Each link is unique to that student and stops working after 7 days.
 
 | Start page | My Quizzes | Quiz builder |
 | --- | --- | --- |
