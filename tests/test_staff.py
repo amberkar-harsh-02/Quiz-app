@@ -28,7 +28,9 @@ def test_list_staff(client, admin, professor):
 
 # --- adding ---
 
-def test_add_email_before_sign_up_then_sign_up_gets_access(client, db, admin):
+def test_add_email_before_sign_up_then_google_sign_in_gets_access(client, db, admin):
+    from unittest.mock import patch
+
     res = client.post("/staff", json={"email": " TA@csumb.edu "}, headers=auth_header(admin))
     assert res.status_code == 201
     assert res.json() == {"email": "ta@csumb.edu", "signed_up": False}
@@ -37,8 +39,19 @@ def test_add_email_before_sign_up_then_sign_up_gets_access(client, db, admin):
     assert {"email": "ta@csumb.edu", "signed_up": False, "added_by": "admin@csumb.edu"}.items() <= next(
         s for s in listed if s["email"] == "ta@csumb.edu").items()
 
-    signup = client.post("/register", json={"email": "ta@csumb.edu", "password": "longenough1"})
-    assert signup.json()["is_professor"] is True
+    with patch.object(main.id_token, "verify_oauth2_token", return_value={"email": "ta@csumb.edu", "email_verified": True}):
+        token = client.post("/google-login", json={"token": "fake"}).json()["access_token"]
+    assert client.get("/quizzes/", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    listed = client.get("/staff", headers=auth_header(admin)).json()["staff"]
+    assert next(s for s in listed if s["email"] == "ta@csumb.edu")["signed_up"] is True
+
+
+def test_staff_list_shows_password_only_accounts_as_not_signed_in_with_google(client, db, admin):
+    make_user(db, "pw@csumb.edu", is_professor=True, email_verified=False)
+
+    listed = client.get("/staff", headers=auth_header(admin)).json()["staff"]
+
+    assert next(s for s in listed if s["email"] == "pw@csumb.edu")["signed_up"] is False
 
 
 def test_adding_existing_user_gives_access_immediately(client, db, admin, student):
@@ -106,7 +119,7 @@ def test_admin_added_to_settings_later_can_host_without_signing_in_again(client,
     monkeypatch.setattr(main, "ADMIN_EMAILS", {"student@csumb.edu"})
 
     assert client.get("/me", headers=auth_header(student)).json() == {
-        "email": "student@csumb.edu", "is_professor": True, "is_admin": True,
+        "email": "student@csumb.edu", "is_professor": True, "is_admin": True, "staff_needs_google": False,
     }
     assert client.get("/quizzes/", headers=auth_header(student)).status_code == 200
     assert client.get("/staff", headers=auth_header(student)).status_code == 200

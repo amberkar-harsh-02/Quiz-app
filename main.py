@@ -134,6 +134,8 @@ def get_db():
 # --- SECURITY & AUTHENTICATION ---
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Stored instead of a password hash for accounts that sign in with Google only
+GOOGLE_ONLY = "GOOGLE_SSO_USER"
 
 def get_password_hash(password):
     return pwd_context.hash(password)
@@ -147,9 +149,18 @@ def create_access_token(data: dict):
 def is_staff(db: Session, email: str) -> bool:
     return email in ADMIN_EMAILS or db.query(models.StaffEmail).filter(models.StaffEmail.email == email).first() is not None
 
+def is_admin(user: models.User) -> bool:
+    return bool(user.email_verified) and user.email in ADMIN_EMAILS
+
 def can_host(user: models.User) -> bool:
-    # Admins always can, even before their stored flag catches up (e.g. ADMIN_EMAILS was just edited)
-    return bool(user.is_professor) or user.email in ADMIN_EMAILS
+    # Staff rights only for an address the person proved they own (Google sign-in); otherwise anyone
+    # could sign up with a listed email before its owner does. Admins always can, even before their
+    # stored flag catches up (e.g. ADMIN_EMAILS was just edited).
+    return bool(user.email_verified) and (bool(user.is_professor) or user.email in ADMIN_EMAILS)
+
+def needs_google_for_staff(db: Session, user: models.User) -> bool:
+    """Listed as staff or admin, but hasn't signed in with Google yet, so the access isn't active."""
+    return not user.email_verified and is_staff(db, user.email)
 
 def sync_role(user: models.User, db: Session):
     """Brings is_professor in line with the staff list, so additions and removals apply at sign-in."""
@@ -162,7 +173,7 @@ def login_response(user: models.User) -> dict:
     token = create_access_token(data={
         "sub": user.email,
         "is_professor": can_host(user),
-        "is_admin": user.email in ADMIN_EMAILS,
+        "is_admin": is_admin(user),
     })
     return {"access_token": token, "token_type": "bearer"}
 
@@ -195,7 +206,7 @@ def get_current_professor(current_user: models.User = Depends(get_current_user))
     return current_user
 
 def get_current_admin(current_user: models.User = Depends(get_current_user)):
-    if current_user.email not in ADMIN_EMAILS:
+    if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admins only.")
     return current_user
 
@@ -226,6 +237,8 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == form_data.username.lower()).first()
 
+    if user and user.hashed_password == GOOGLE_ONLY:
+        raise HTTPException(status_code=401, detail="This account uses Sign in with Google.")
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
@@ -234,6 +247,10 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 
 @app.post("/google-login")
 def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
+    # Without our client ID, Google's library skips the audience check and would accept a token
+    # issued to any other website
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Sign in with Google isn't set up on this server.")
     try:
         idinfo = id_token.verify_oauth2_token(
             request.token,
@@ -241,40 +258,42 @@ def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db
             GOOGLE_CLIENT_ID,
             clock_skew_in_seconds=60
         )
-        email = idinfo['email'].lower()
-
-        if not email.endswith("@csumb.edu"):
-            raise HTTPException(status_code=403, detail="Only @csumb.edu accounts are permitted.")
-
-        user = db.query(models.User).filter(models.User.email == email).first()
-        if not user:
-            user = models.User(
-                email=email,
-                hashed_password="GOOGLE_SSO_USER",
-                is_professor=is_staff(db, email)
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        else:
-            sync_role(user, db)
-
-        return login_response(user)
-
     except ValueError as e:
-        # Print the exact error to your terminal
-        print(f"GOOGLE AUTH ERROR: {str(e)}")
-        # Send the exact error back to the frontend
-        raise HTTPException(status_code=401, detail=f"Google Error: {str(e)}")
+        print(f"GOOGLE AUTH ERROR: {e}")
+        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+
+    email = (idinfo.get("email") or "").lower()
+    if idinfo.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="Google hasn't verified this account's email.")
+    if not email.endswith("@csumb.edu"):
+        raise HTTPException(status_code=403, detail="Only @csumb.edu accounts are permitted.")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        user = models.User(email=email, hashed_password=GOOGLE_ONLY, is_professor=is_staff(db, email), email_verified=True)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        if not user.email_verified:
+            # A password sign-up never proved who owns this address. The owner has now, so the old
+            # password stops working; whoever set it (maybe not the owner) loses access.
+            user.hashed_password = GOOGLE_ONLY
+            user.email_verified = True
+            db.commit()
+        sync_role(user, db)
+
+    return login_response(user)
 
 
 @app.get("/me")
-def read_me(current_user: models.User = Depends(get_current_user)):
+def read_me(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # The login token's role flags can be out of date; the frontend asks here instead
     return {
         "email": current_user.email,
         "is_professor": can_host(current_user),
-        "is_admin": current_user.email in ADMIN_EMAILS,
+        "is_admin": is_admin(current_user),
+        "staff_needs_google": needs_google_for_staff(db, current_user),
     }
 
 
@@ -283,7 +302,10 @@ def read_me(current_user: models.User = Depends(get_current_user)):
 @app.get("/staff")
 def list_staff(db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)):
     rows = db.query(models.StaffEmail).order_by(models.StaffEmail.email).all()
-    registered = {u.email for u in db.query(models.User).filter(models.User.email.in_([r.email for r in rows]))}
+    # Access is active only once they've signed in with Google
+    registered = {u.email for u in db.query(models.User).filter(
+        models.User.email.in_([r.email for r in rows]), models.User.email_verified == True  # noqa: E712
+    )}
     return {
         "admins": sorted(ADMIN_EMAILS),
         "staff": [
@@ -313,7 +335,7 @@ def add_staff(body: schemas.StaffAdd, db: Session = Depends(get_db), admin: mode
     if user:
         user.is_professor = True
     db.commit()
-    return {"email": email, "signed_up": user is not None}
+    return {"email": email, "signed_up": bool(user and user.email_verified)}
 
 @app.delete("/staff/{email}")
 def remove_staff(email: str, db: Session = Depends(get_db), _: models.User = Depends(get_current_admin)):

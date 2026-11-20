@@ -60,7 +60,8 @@ flowchart LR
 - Passwords need at least 8 characters. The sign-up form asks for the password twice.
 - Signing in returns a JWT that expires after 24 hours. It carries the email and `is_professor` / `is_admin` flags. The frontend keeps it in `localStorage` and sends it as a `Bearer` header.
 - Host access comes only from the staff list (`staff_emails` table) or `ADMIN_EMAILS`. There is no "I am a professor" option at sign-up.
-- An admin can add an email before that person has an account; it applies when they sign up. Adding or removing someone who already has an account takes effect immediately. Every professor-only request checks `User.is_professor` in the database rather than the flag in the token, and the frontend reads the current role from `GET /me`.
+- Staff and admin rights need `User.email_verified`, which Google sign-in sets (it requires Google's `email_verified` claim). A password sign-up can't prove someone owns the address, so it never grants these rights. When a password account first signs in with Google, its password is replaced, so whoever set it loses access. `GOOGLE_CLIENT_ID` must be set: without it, `/google-login` returns 503, because Google's library would skip the audience check and accept tokens issued to other sites. `verify_email.py` lets an operator mark an address verified by hand (local testing).
+- An admin can add an email before that person has an account; it applies when they sign in with Google. Adding or removing someone who already has an account takes effect immediately. Every professor-only request checks `User.is_professor` in the database rather than the flag in the token, and the frontend reads the current role from `GET /me`.
 - On startup the server copies existing professors and any emails in the old `PROFESSOR_EMAILS` setting onto the staff list, so upgrading doesn't take anyone's access away.
 - The host WebSocket checks the token and that the professor **owns** the quiz before it opens.
 
@@ -256,8 +257,8 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | POST | `/register` | Create an account (`@csumb.edu` only) |
 | POST | `/token` | Sign in with email and password, returns a JWT |
 | POST | `/google-login` | Sign in with a Google ID token, returns a JWT |
-| GET | `/me` 👤 | Your email and current `is_professor` / `is_admin` |
-| GET | `/staff` 🛡️ | Admins and staff, with whether each has signed up |
+| GET | `/me` 👤 | Your email, current `is_professor` / `is_admin`, and `staff_needs_google` (listed as staff but not yet signed in with Google) |
+| GET | `/staff` 🛡️ | Admins and staff, with whether each has signed in with Google (`signed_up`) |
 | POST | `/staff` 🛡️ | Add a `@csumb.edu` email to the staff list (409 if already there) |
 | DELETE | `/staff/{email}` 🛡️ | Remove someone from the staff list (admins can't be removed here) |
 | GET | `/quizzes/` 🔒 | List your quizzes |
@@ -319,6 +320,7 @@ erDiagram
         string email
         string hashed_password
         bool is_professor
+        bool email_verified
     }
     Quiz {
         int id
@@ -388,6 +390,7 @@ erDiagram
 ```
 main.py                  FastAPI app: auth, REST endpoints, both WebSocket endpoints, scoring
 images.py                Checks, shrinks and strips metadata from uploaded question images
+verify_email.py          Operator tool: marks an account's email verified (local testing without Google)
 pdfs.py                  Student review and class report PDFs (fpdf2, with the bundled font in fonts/)
 game_manager.py          In-memory rooms: create, join, reconnect, online count, broadcast
 models.py                SQLAlchemy tables

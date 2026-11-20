@@ -42,7 +42,7 @@ export default function StudentView() {
   useEffect(() => {
     if (!signedInEmail) return;
     apiFetch('/me')
-      .then((me) => setUser((u) => u && { ...u, is_professor: me.is_professor, is_admin: me.is_admin }))
+      .then((me) => setUser((u) => u && { ...u, is_professor: me.is_professor, is_admin: me.is_admin, staff_needs_google: me.staff_needs_google }))
       .catch(() => {});
   }, [signedInEmail]);
 
@@ -212,6 +212,7 @@ export default function StudentView() {
     return (
       <StudentDashboard
         email={user.sub}
+        staffNeedsGoogle={Boolean(user.staff_needs_google)}
         history={history}
         historyError={historyError}
         joinError={joinError}

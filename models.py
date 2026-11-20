@@ -13,6 +13,9 @@ class User(Base):
     hashed_password = Column(String)
     # Kept in sync with StaffEmail / ADMIN_EMAILS; checked by every professor-only route
     is_professor = Column(Boolean, default=False)
+    # True once the person signed in with Google, which proves they own the address.
+    # Staff and admin rights need it; a password sign-up alone proves nothing.
+    email_verified = Column(Boolean, default=False, nullable=False)
 
 
 class Image(Base):

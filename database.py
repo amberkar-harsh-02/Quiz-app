@@ -47,6 +47,12 @@ def add_missing_columns(bind):
         if columns and "student_review_pdf" not in columns:
             conn.execute(text("ALTER TABLE quizzes ADD COLUMN student_review_pdf BOOLEAN NOT NULL DEFAULT 0"))
 
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(users)"))}
+        if columns and "email_verified" not in columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0"))
+            # Accounts made by Google sign-in were already verified by Google
+            conn.execute(text("UPDATE users SET email_verified = 1 WHERE hashed_password = 'GOOGLE_SSO_USER'"))
+
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(student_results)"))}
         if columns and "review_token" not in columns:
             conn.execute(text("ALTER TABLE student_results ADD COLUMN review_token TEXT"))

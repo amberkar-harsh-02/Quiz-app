@@ -57,11 +57,13 @@ def client():
         yield c
 
 
-def make_user(db, email, is_professor=False, password="password123"):
+def make_user(db, email, is_professor=False, password="password123", email_verified=True):
+    # Verified by default: most tests model a real person who has signed in with Google once
     user = models.User(
         email=email,
         hashed_password=main.get_password_hash(password),
         is_professor=is_professor,
+        email_verified=email_verified,
     )
     db.add(user)
     if is_professor:

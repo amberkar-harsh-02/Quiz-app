@@ -34,3 +34,17 @@ def test_adds_use_timer_column_to_old_quizzes_and_defaults_to_on():
         questions = {row[1] for row in conn.execute(text("PRAGMA table_info(questions)"))}
     assert rows == [("Old quiz", 1, 1, 50, 0)]
     assert {"image_id", "image_alt"} <= questions
+
+
+def test_existing_google_accounts_count_as_verified_and_password_ones_do_not():
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR, hashed_password VARCHAR)"))
+        conn.execute(text("INSERT INTO users (email, hashed_password) VALUES ('g@csumb.edu', 'GOOGLE_SSO_USER'), ('p@csumb.edu', '$2b$12$hash')"))
+
+    add_missing_columns(engine)
+    add_missing_columns(engine)
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT email, email_verified FROM users ORDER BY email")).all()
+    assert rows == [("g@csumb.edu", 1), ("p@csumb.edu", 0)]

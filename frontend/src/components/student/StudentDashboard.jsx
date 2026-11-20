@@ -2,7 +2,7 @@ import { useState } from 'react';
 import HistoryList from './HistoryList';
 import { Alert, Button, Panel, Wordmark, pinInputClass } from '../ui';
 
-export default function StudentDashboard({ email, history, historyError, joinError, onJoin, onSignOut, expandedId, onToggle }) {
+export default function StudentDashboard({ email, staffNeedsGoogle, history, historyError, joinError, onJoin, onSignOut, expandedId, onToggle }) {
   const [roomCode, setRoomCode] = useState('');
   const name = email.split('@')[0];
 
@@ -20,6 +20,12 @@ export default function StudentDashboard({ email, history, historyError, joinErr
 
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <h1 className="mb-6 text-3xl font-bold tracking-tight">Hi, {name}</h1>
+
+        {staffNeedsGoogle && (
+          <p className="mb-6 rounded-control border border-line bg-white px-4 py-3 text-muted">
+            Your email is on the staff list. To host games, log out and use <strong className="text-ink">Sign in with Google</strong>; that proves the address is yours.
+          </p>
+        )}
 
         <Panel className="mb-10 p-5 sm:p-6">
           <h2 className="mb-1 text-xl font-bold">Join a live quiz</h2>

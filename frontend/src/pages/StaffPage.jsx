@@ -42,7 +42,7 @@ export default function StaffPage() {
         type: 'success',
         text: added.signed_up
           ? `${added.email} can host games now.`
-          : `${added.email} will be able to host games once they sign up.`,
+          : `${added.email} will be able to host games once they sign in with Google.`,
       });
       await loadStaff();
     } catch (err) {
@@ -77,7 +77,7 @@ export default function StaffPage() {
 
       <main className="mx-auto max-w-4xl px-6 py-8">
         <h1 className="mb-1 text-3xl font-bold tracking-tight">Staff</h1>
-        <p className="mb-6 text-muted">Professors and TAs on this list can host games, edit quizzes and see analytics. Everyone else signs in as a student.</p>
+        <p className="mb-6 text-muted">Professors and TAs on this list can host games, edit quizzes and see analytics once they sign in with Google, which proves the email is theirs. Everyone else signs in as a student.</p>
 
         {message && (
           <div className="mb-6">
@@ -121,7 +121,7 @@ export default function StaffPage() {
                   {staff.map((s) => (
                     <tr key={s.email}>
                       <td className="px-5 py-3 font-bold">{s.email}</td>
-                      <td className={`px-5 py-3 ${s.signed_up ? 'text-ok' : 'text-muted'}`}>{s.signed_up ? 'Signed up' : 'Not signed up yet'}</td>
+                      <td className={`px-5 py-3 ${s.signed_up ? 'text-ok' : 'text-muted'}`}>{s.signed_up ? 'Signed in with Google' : 'Not signed in with Google yet'}</td>
                       <td className="hidden px-5 py-3 text-sm text-muted sm:table-cell">
                         {formatDate(s.added_at)}{s.added_by && s.added_by !== '(carried over)' ? ` by ${s.added_by}` : ''}
                       </td>
