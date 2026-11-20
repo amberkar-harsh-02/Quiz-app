@@ -1,15 +1,19 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, File, UploadFile, Response
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query, File, UploadFile, Request, Response
+from fastapi.concurrency import run_in_threadpool
+from collections import defaultdict, deque
 import csv
 import io
 import json
+import re
 import secrets
+import threading
 import time
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, SessionLocal, add_missing_columns
 import models, schemas
-from game_manager import manager
+from game_manager import MAX_PLAYERS_PER_ROOM, manager
 from images import MAX_UPLOAD_BYTES, clean_image
 from pdfs import class_report_pdf, review_pdf, solutions_pdf
 from passlib.context import CryptContext
@@ -51,6 +55,9 @@ MAX_NICKNAME_LENGTH = 20
 # How long a student's review PDF link keeps working after the game
 REVIEW_LINK_DAYS = 7
 COLORS = ("red", "blue", "yellow", "green")
+CSUMB_EMAIL = re.compile(r"[a-z0-9][a-z0-9._%+-]*@csumb\.edu")
+# Student messages are tiny ({"event": "submit_answer", ...}); anything bigger isn't from the app
+MAX_STUDENT_MESSAGE_CHARS = 1024
 
 if not SECRET_KEY:
     raise ValueError("No SECRET_KEY set for the application. Please check your .env file.")
@@ -61,13 +68,20 @@ add_missing_columns(engine)
 
 
 def seed_staff_emails():
-    """Carries existing access over to the staff list, so nobody loses it when this feature arrives."""
+    """Carries existing access over to the staff list, so nobody loses it when this feature arrives.
+
+    Runs once. Running it on every start would undo removals: someone taken off the Staff page, or out
+    of ADMIN_EMAILS, would be put back on the list at the next restart.
+    """
     db = SessionLocal()
     try:
+        if db.get(models.AppFlag, "staff_list_seeded"):
+            return
         listed = {row.email for row in db.query(models.StaffEmail).all()}
         professors = {u.email for u in db.query(models.User).filter(models.User.is_professor == True)}  # noqa: E712
         for email in sorted((professors | LEGACY_PROFESSOR_EMAILS) - listed - ADMIN_EMAILS):
             db.add(models.StaffEmail(email=email, added_by="(carried over)"))
+        db.add(models.AppFlag(name="staff_list_seeded"))
         db.commit()
     finally:
         db.close()
@@ -137,6 +151,73 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Stored instead of a password hash for accounts that sign in with Google only
 GOOGLE_ONLY = "GOOGLE_SSO_USER"
 
+
+class RateLimiter:
+    """At most `limit` hits per key within `window` seconds. Kept in memory: the app runs as one process."""
+
+    def __init__(self, limit: int, window: float):
+        self.limit, self.window = limit, window
+        self.hits = defaultdict(deque)
+        self.lock = threading.Lock()
+
+    def _recent(self, key, now):
+        q = self.hits[key]
+        while q and now - q[0] > self.window:
+            q.popleft()
+        return q
+
+    def full(self, key) -> bool:
+        with self.lock:
+            return len(self._recent(key, time.monotonic())) >= self.limit
+
+    def add(self, key):
+        with self.lock:
+            now = time.monotonic()
+            self._recent(key, now).append(now)
+            if len(self.hits) > 10_000:  # forget clients that have gone quiet
+                for k in [k for k, q in self.hits.items() if not q or now - q[-1] > self.window]:
+                    del self.hits[k]
+
+    def clear(self):
+        with self.lock:
+            self.hits.clear()
+
+
+# Sign-in and sign-up run bcrypt or a call to Google, so unlimited attempts could slow the server for
+# live games. Generous enough for a whole class on one campus network signing in at once.
+sign_in_attempts = RateLimiter(limit=60, window=60)
+# Wrong passwords per account, against guessing one person's password
+failed_logins = RateLimiter(limit=10, window=15 * 60)
+TOO_MANY = HTTPException(status_code=429, detail="Too many attempts. Please wait a minute and try again.")
+
+def check_sign_in_rate(request: Request):
+    # Behind Caddy, uvicorn fills client.host from X-Forwarded-For (it trusts 127.0.0.1 by default)
+    client = request.client.host if request.client else "unknown"
+    if sign_in_attempts.full(client):
+        raise TOO_MANY
+    sign_in_attempts.add(client)
+
+
+class CachedCertsRequest:
+    """Google's sign-in certificates change rarely. Without this, every sign-in, even with a junk token,
+    fetched them from Google first."""
+
+    def __init__(self, ttl: float = 3600):
+        self.ttl = ttl
+        self.inner = google_requests.Request()
+        self.cache = {}
+
+    def __call__(self, url, method="GET", **kwargs):
+        hit = self.cache.get(url)
+        if method == "GET" and hit and time.monotonic() - hit[0] < self.ttl:
+            return hit[1]
+        response = self.inner(url, method=method, **kwargs)
+        if method == "GET" and response.status == 200:
+            self.cache[url] = (time.monotonic(), response)
+        return response
+
+google_certs_request = CachedCertsRequest()
+
 def get_password_hash(password):
     return pwd_context.hash(password)
 
@@ -152,11 +233,11 @@ def is_staff(db: Session, email: str) -> bool:
 def is_admin(user: models.User) -> bool:
     return bool(user.email_verified) and user.email in ADMIN_EMAILS
 
-def can_host(user: models.User) -> bool:
+def can_host(db: Session, user: models.User) -> bool:
     # Staff rights only for an address the person proved they own (Google sign-in); otherwise anyone
-    # could sign up with a listed email before its owner does. Admins always can, even before their
-    # stored flag catches up (e.g. ADMIN_EMAILS was just edited).
-    return bool(user.email_verified) and (bool(user.is_professor) or user.email in ADMIN_EMAILS)
+    # could sign up with a listed email before its owner does. Read from the current staff list and
+    # ADMIN_EMAILS, not a stored flag, so a removal applies to the very next request.
+    return bool(user.email_verified) and is_staff(db, user.email)
 
 def needs_google_for_staff(db: Session, user: models.User) -> bool:
     """Listed as staff or admin, but hasn't signed in with Google yet, so the access isn't active."""
@@ -169,10 +250,10 @@ def sync_role(user: models.User, db: Session):
         user.is_professor = should_host
         db.commit()
 
-def login_response(user: models.User) -> dict:
+def login_response(db: Session, user: models.User) -> dict:
     token = create_access_token(data={
         "sub": user.email,
-        "is_professor": can_host(user),
+        "is_professor": can_host(db, user),
         "is_admin": is_admin(user),
     })
     return {"access_token": token, "token_type": "bearer"}
@@ -200,8 +281,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-def get_current_professor(current_user: models.User = Depends(get_current_user)):
-    if not can_host(current_user):
+def get_current_professor(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not can_host(db, current_user):
         raise HTTPException(status_code=403, detail="Professors and TAs only.")
     return current_user
 
@@ -211,11 +292,14 @@ def get_current_admin(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 
-@app.post("/register", response_model=schemas.UserResponse)
+@app.post("/register", response_model=schemas.UserResponse, dependencies=[Depends(check_sign_in_rate)])
 def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    email = user.email.lower()
+    email = user.email.strip().lower()
     if not email.endswith("@csumb.edu"):
         raise HTTPException(status_code=400, detail="Only @csumb.edu email addresses are permitted.")
+    # A real address; also keeps formula characters out of the gradebook's email column
+    if not CSUMB_EMAIL.fullmatch(email):
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid @csumb.edu email address.")
 
     existing_user = db.query(models.User).filter(models.User.email == email).first()
     if existing_user:
@@ -233,28 +317,32 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-@app.post("/token")
+@app.post("/token", dependencies=[Depends(check_sign_in_rate)])
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == form_data.username.lower()).first()
+    email = form_data.username.strip().lower()
+    if failed_logins.full(email):
+        raise TOO_MANY
+    user = db.query(models.User).filter(models.User.email == email).first()
 
     if user and user.hashed_password == GOOGLE_ONLY:
         raise HTTPException(status_code=401, detail="This account uses Sign in with Google.")
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+        failed_logins.add(email)
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
     sync_role(user, db)
-    return login_response(user)
+    return login_response(db, user)
 
-@app.post("/google-login")
-def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
+@app.post("/google-login", dependencies=[Depends(check_sign_in_rate)])
+def google_auth(body: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
     # Without our client ID, Google's library skips the audience check and would accept a token
     # issued to any other website
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Sign in with Google isn't set up on this server.")
     try:
         idinfo = id_token.verify_oauth2_token(
-            request.token,
-            google_requests.Request(),
+            body.token,
+            google_certs_request,
             GOOGLE_CLIENT_ID,
             clock_skew_in_seconds=60
         )
@@ -283,7 +371,7 @@ def google_auth(request: schemas.GoogleAuthRequest, db: Session = Depends(get_db
             db.commit()
         sync_role(user, db)
 
-    return login_response(user)
+    return login_response(db, user)
 
 
 @app.get("/me")
@@ -291,7 +379,7 @@ def read_me(current_user: models.User = Depends(get_current_user), db: Session =
     # The login token's role flags can be out of date; the frontend asks here instead
     return {
         "email": current_user.email,
-        "is_professor": can_host(current_user),
+        "is_professor": can_host(db, current_user),
         "is_admin": is_admin(current_user),
         "staff_needs_google": needs_google_for_staff(db, current_user),
     }
@@ -476,7 +564,8 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Images can be at most 5 MB.")
     try:
-        data, content_type, width, height = clean_image(raw)
+        # Off the event loop, so decoding doesn't pause live games
+        data, content_type, width, height = await run_in_threadpool(clean_image, raw)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -534,16 +623,6 @@ def duplicate_quiz(quiz_id: int, db: Session = Depends(get_db), current_user: mo
     db.refresh(copy)
     return copy
 
-@app.post("/quizzes/{quiz_id}/questions/", response_model=schemas.Question)
-def create_question_for_quiz(quiz_id: int, question: schemas.QuestionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
-    get_owned_quiz(quiz_id, db, current_user)
-
-    db_question = models.Question(**question.model_dump(), quiz_id=quiz_id)
-    db.add(db_question)
-    db.commit()
-    db.refresh(db_question)
-    return db_question
-
 @app.get("/sessions/")
 def get_past_sessions(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_professor)):
     # Sessions carry their own owner and title, so games of edited or deleted quizzes still show
@@ -597,7 +676,8 @@ def download_class_report(session_id: int, db: Session = Depends(get_db), curren
     })
 
 def csv_safe(value) -> str:
-    # A nickname like "=HYPERLINK(...)" would run as a formula when the CSV is opened in a spreadsheet
+    # Text people typed, like a nickname "=HYPERLINK(...)", would run as a formula when the CSV is opened
+    # in a spreadsheet. Applied to every text column.
     text_value = str(value)
     return "'" + text_value if text_value[:1] in ("=", "+", "-", "@") else text_value
 
@@ -613,7 +693,7 @@ def download_grades(session_id: int, db: Session = Depends(get_db), current_user
     writer.writerow(["name", "email", "score", "correct", "total_questions", "accuracy_percent"])
     for r in results:
         writer.writerow([
-            csv_safe(r.student_name), emails.get(r.user_id, ""), r.total_score, r.correct_answers, total,
+            csv_safe(r.student_name), csv_safe(emails.get(r.user_id, "")), r.total_score, r.correct_answers, total,
             round(r.correct_answers / total * 100) if total else 0,
         ])
     return Response(content=out.getvalue(), media_type="text/csv; charset=utf-8", headers={
@@ -942,9 +1022,37 @@ async def show_results(room: dict):
         "no_answer": sum(1 for s in room["students"].values() if s.get("last_answered_index") != index),
     })
 
-    for s in room["students"].values():
+    # A copy: a student can join while a send is waiting, which would break iterating the dict itself
+    for s in list(room["students"].values()):
         if s["status"] == "online":
             await send_to_student(s, answer_result(room, s))
+
+
+def save_game(quiz_id, room_code, quiz_title, owner_id, questions, players) -> int:
+    """Writes a finished game: the session, its copy of the questions, and each player's result and answers.
+    Takes plain copies of the room's data, since it runs in a worker thread."""
+    db = SessionLocal()
+    try:
+        game_session = models.GameSession(quiz_id=quiz_id, room_code=room_code, quiz_title=quiz_title, owner_id=owner_id)
+        snapshot_questions(game_session, questions)
+        for p in players:
+            result = models.StudentResult(
+                student_name=p["name"],
+                total_score=p["score"],
+                correct_answers=sum(1 for ans in p["history"] if ans["is_correct"] == 1),
+                user_id=p["user_id"],
+                review_token=p["review_token"],
+            )
+            result.answers = [
+                models.StudentAnswer(question_id=ans["question_id"], selected_option=ans["selected_option"], is_correct=ans["is_correct"])
+                for ans in p["history"]
+            ]
+            game_session.results.append(result)
+        db.add(game_session)
+        db.commit()
+        return game_session.id
+    finally:
+        db.close()
 
 
 # --- WEBSOCKETS ---
@@ -962,7 +1070,7 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
     try:
         user = db.query(models.User).filter(models.User.email == payload.get("sub")).first()
         quiz = db.query(models.Quiz).filter(models.Quiz.id == quiz_id).first()
-        if not user or not can_host(user):
+        if not user or not can_host(db, user):
             await websocket.close(code=1008, reason="Professors only")
             return
         if not quiz or quiz.owner_id != user.id:
@@ -999,16 +1107,18 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
     # 2. Token is valid and the professor owns this quiz, accept connection
     await websocket.accept()
     room_code = manager.create_room(quiz_id, websocket)
-    manager.active_rooms[room_code]["auto_advance_results"] = auto_advance_results
-    manager.active_rooms[room_code]["speed_weight"] = speed_weight
+    # This socket's own room; it only ever acts on (and deletes) this one
+    my_room = manager.active_rooms[room_code]
+    my_room["auto_advance_results"] = auto_advance_results
+    my_room["speed_weight"] = speed_weight
     await websocket.send_json({"event": "room_created", "room_code": room_code, "speed_weight": speed_weight})
 
     try:
         while True:
             data = await websocket.receive_json()
-            event = data.get("event")
+            event = data.get("event") if isinstance(data, dict) else None
             room = manager.active_rooms.get(room_code)
-            if not room:
+            if room is not my_room:
                 continue
 
             if event == "start_game":
@@ -1038,44 +1148,20 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
 
                 # A game that never started has no results worth keeping
                 if total_questions:
-                    db = SessionLocal()
-                    try:
-                        game_session = models.GameSession(
-                            quiz_id=quiz_id, room_code=room_code, quiz_title=quiz_title, owner_id=owner_id,
-                        )
-                        snapshot_questions(game_session, snapshot_source)
-                        db.add(game_session)
-                        db.flush()
+                    players = []
+                    for student in list(room["students"].values()):
+                        if reviews_enabled:
+                            student["review_token"] = secrets.token_urlsafe(24)
+                        players.append({
+                            "name": student["name"], "score": student["score"], "user_id": student.get("user_id"),
+                            "review_token": student.get("review_token"), "history": list(student.get("history", [])),
+                        })
+                    # Saved in a worker thread: a large class would otherwise pause every other live game
+                    final_session_id = await run_in_threadpool(
+                        save_game, quiz_id, room_code, quiz_title, owner_id, snapshot_source, players,
+                    )
 
-                        for student in room["students"].values():
-                            history = student.get("history", [])
-                            if reviews_enabled:
-                                student["review_token"] = secrets.token_urlsafe(24)
-                            result = models.StudentResult(
-                                session_id=game_session.id,
-                                student_name=student["name"],
-                                total_score=student["score"],
-                                correct_answers=sum(1 for ans in history if ans["is_correct"] == 1),
-                                user_id=student.get("user_id"),
-                                review_token=student.get("review_token"),
-                            )
-                            db.add(result)
-                            db.flush()
-
-                            for ans in history:
-                                db.add(models.StudentAnswer(
-                                    result_id=result.id,
-                                    question_id=ans["question_id"],
-                                    selected_option=ans["selected_option"],
-                                    is_correct=ans["is_correct"]
-                                ))
-
-                        db.commit()
-                        final_session_id = game_session.id
-                    finally:
-                        db.close()
-
-                for student in room["students"].values():
+                for student in list(room["students"].values()):
                     if student["status"] == "online":
                         await send_to_student(student, {
                             "event": "game_over",
@@ -1102,10 +1188,12 @@ async def websocket_host(websocket: WebSocket, quiz_id: int, token: str = Query(
                 del manager.active_rooms[room_code]
 
     except WebSocketDisconnect:
-        # Host closed the tab mid-game: shut the room so students aren't left waiting
-        room = manager.active_rooms.pop(room_code, None)
-        if room:
-            for student in room["students"].values():
+        pass
+    finally:
+        # Host closed the tab mid-game (or the handler failed): shut the room so students aren't left waiting
+        if manager.active_rooms.get(room_code) is my_room:
+            del manager.active_rooms[room_code]
+            for student in list(my_room["students"].values()):
                 if student["status"] == "online":
                     await send_to_student(student, {"event": "host_left"})
 
@@ -1134,6 +1222,9 @@ async def websocket_student(
     resumed = bool(player_id) and manager.reattach_student(room_code, player_id, websocket)
 
     if not resumed:
+        if manager.is_full(room_code):
+            await reject(f"This game is full ({MAX_PLAYERS_PER_ROOM} players).")
+            return
         student_name = student_name.strip()
         if not student_name or len(student_name) > MAX_NICKNAME_LENGTH:
             await reject(f"Nickname must be 1–{MAX_NICKNAME_LENGTH} characters.")
@@ -1193,14 +1284,29 @@ async def websocket_student(
             "total_players": manager.online_count(room_code)
         })
 
+    # The room this socket joined. Codes are reused after a game ends, so never act on a newer room.
+    my_room = room
     try:
         while True:
-            data = await websocket.receive_json()
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            raw = message.get("text") or ""
+            if len(raw) > MAX_STUDENT_MESSAGE_CHARS:
+                # Parsing a huge message would pause every live game, so don't
+                await websocket.close(code=1009)
+                break
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(data, dict):
+                continue
             event = data.get("event")
 
             if event == "submit_answer":
                 room = manager.active_rooms.get(room_code)
-                if not room or room["current_state"] != "question_active":
+                if room is not my_room or room["current_state"] != "question_active":
                     continue
 
                 current_q_index = room["current_question_index"]
@@ -1238,9 +1344,11 @@ async def websocket_student(
                 })
 
     except WebSocketDisconnect:
+        pass
+    finally:
         room = manager.active_rooms.get(room_code)
         # Skip if a newer socket already took over this player (reconnect raced the old close)
-        if room and student["ws"] is websocket:
+        if room is my_room and student["ws"] is websocket:
             manager.mark_student_offline(room_code, player_id)
             # Tell the host so the "everyone answered" auto-skip doesn't wait for this student
             await notify_host(room, {

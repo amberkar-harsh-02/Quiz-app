@@ -248,6 +248,17 @@ The app is for a security course, and scores can count toward grades, so these r
 - **Past results can't be changed by editing a quiz.** Each finished game stores its own copy of the questions. Editing a played quiz only affects future games. Deleting it removes it from My Quizzes, while its games, grades and reviews stay in Analytics.
 - Quiz uploads go through the same validation as the builder. A bad file is rejected as a whole, and nothing is half-saved.
 
+### Limits that protect live games
+
+Every live game runs in one server process, so one person must not be able to slow it down for everyone:
+
+- A room takes at most 250 players (`MAX_PLAYERS_PER_ROOM` in `game_manager.py`). Players who drop still count, since their place is kept for them to rejoin.
+- Room codes are always unique among live games, and each socket only ever acts on the room it joined, even if a code is reused after a game ends.
+- A student message over 1 KB closes that student's socket before it is parsed; messages that aren't JSON objects are ignored.
+- Images over 40 megapixels are refused before they are decoded, and decoding runs in a worker thread. So does saving a finished game.
+- Sign-in, sign-up and Google sign-in allow 60 attempts a minute per client address, and 10 wrong passwords per account in 15 minutes. Google's sign-in certificates are cached for an hour instead of fetched on every attempt.
+- Grades CSV cells that start with `=`, `+`, `-` or `@` get a leading `'`, in every text column, so a spreadsheet won't run them as formulas. Sign-up also only accepts ordinary `@csumb.edu` addresses.
+
 ## REST API
 
 Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs any signed-in user.
@@ -270,7 +281,6 @@ Endpoints marked 🔒 need a professor token; 🛡️ needs an admin; 👤 needs
 | POST | `/quizzes/{id}/duplicate` 🔒 | Copy a quiz as "Copy of …" with the same questions and settings |
 | GET | `/quizzes/{id}/solutions.pdf` 🔒 | Answer key for the quiz as it is now (owner only) |
 | POST | `/quizzes/` 🔒 | Create an empty quiz |
-| POST | `/quizzes/{id}/questions/` 🔒 | Add one question |
 | GET | `/sessions/` 🔒 | Past games of your quizzes |
 | GET | `/analytics/{session_id}` 🔒 | Class overview, per-question stats and roster (each student has a `result_id`) |
 | GET | `/analytics/{session_id}/solutions.pdf` 🔒 | Answer key for the questions as they were played |

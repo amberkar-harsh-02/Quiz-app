@@ -31,9 +31,6 @@ class QuestionBase(BaseModel):
     image_id: Optional[str] = None
     image_alt: Optional[str] = None
 
-class QuestionCreate(QuestionBase):
-    pass
-
 class Question(QuestionBase):
     id: int
     quiz_id: int

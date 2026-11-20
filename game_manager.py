@@ -2,6 +2,9 @@ import uuid
 from typing import Dict, Any
 from fastapi import WebSocket
 
+# Far above any class; stops a script from adding fake players without limit
+MAX_PLAYERS_PER_ROOM = 250
+
 class GameManager:
     def __init__(self):
         # Maps a 6-digit hex room code to the live game state
@@ -9,7 +12,10 @@ class GameManager:
 
     def create_room(self, quiz_id: int, host_ws: WebSocket) -> str:
         """Generates a room and stores the TA/Professor's websocket."""
+        # A code still in use would replace another professor's live game
         room_code = uuid.uuid4().hex[:6].upper()
+        while room_code in self.active_rooms:
+            room_code = uuid.uuid4().hex[:6].upper()
         self.active_rooms[room_code] = {
             "quiz_id": quiz_id,
             "host_ws": host_ws,
@@ -32,6 +38,11 @@ class GameManager:
             "status": "online" # We toggle this to offline if they disconnect
         }
         return player_id
+
+    def is_full(self, room_code: str) -> bool:
+        # Counts players who dropped too: their entries stay so they can rejoin with their score
+        room = self.active_rooms.get(room_code)
+        return bool(room) and len(room["students"]) >= MAX_PLAYERS_PER_ROOM
 
     def name_taken(self, room_code: str, student_name: str) -> bool:
         """True if an online student in the room already uses this nickname (case-insensitive)."""
@@ -72,7 +83,8 @@ class GameManager:
     async def broadcast_to_students(self, room_code: str, message: dict):
         """Sends a JSON payload to all online students in a room."""
         if room_code in self.active_rooms:
-            for player_id, student in self.active_rooms[room_code]["students"].items():
+            # A copy: a student can join while a send is waiting, which would break iterating the dict itself
+            for student in list(self.active_rooms[room_code]["students"].values()):
                 if student["status"] == "online":
                     try:
                         await student["ws"].send_json(message)

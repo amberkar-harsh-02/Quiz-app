@@ -43,6 +43,13 @@ class StaffEmail(Base):
     added_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class AppFlag(Base):
+    """One-time startup steps that have already run, so they never run again."""
+    __tablename__ = "app_flags"
+
+    name = Column(String, primary_key=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
 class Quiz(Base):
     """Stores the overarching quiz information."""
     __tablename__ = "quizzes"

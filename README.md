@@ -111,7 +111,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
    Wrong answers always score 0.
 
    **Images:** each question can have one JPG or PNG (a diagram, chart or photo). Click **+ Add image** under the question text.
-   - Uploads can be up to 5 MB.
+   - Uploads can be up to 5 MB and 40 megapixels.
    - They're checked to be real images, resized to at most 1600 px, and re-saved, which removes hidden metadata such as a phone photo's location.
    - Add an **Image description** for students who use screen readers.
    - The image shows on the projector, on students' screens (tap to enlarge) and in their review.

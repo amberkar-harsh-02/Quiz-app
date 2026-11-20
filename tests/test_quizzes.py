@@ -225,29 +225,13 @@ def test_read_quiz_hides_answers_from_others(client, db, professor, student):
     assert client.get(f"/quizzes/{quiz.id}", headers=auth_header(other)).status_code == 403
 
 
-# --- POST /quizzes/{id}/questions/ ---
+# --- removed legacy route ---
 
-def test_add_question_to_quiz(client, db, professor):
+def test_single_question_route_is_gone(client, db, professor):
+    # It skipped the builder's checks (image ownership, answer and timer limits); the builder covers it
     quiz = make_quiz(db, professor)
-    q = question_data()
-    del q["explanation"]
-
-    res = client.post(f"/quizzes/{quiz.id}/questions/", json=q, headers=auth_header(professor))
-
-    assert res.status_code == 200
-    assert res.json()["quiz_id"] == quiz.id
-    assert db.query(models.Question).filter_by(quiz_id=quiz.id).count() == 1
-
-
-def test_add_question_to_missing_quiz(client, professor):
-    q = question_data()
-    del q["explanation"]
-    assert client.post("/quizzes/999/questions/", json=q, headers=auth_header(professor)).status_code == 404
-
-
-def test_add_question_requires_owner(client, db, professor):
-    quiz = make_quiz(db, professor)
-    assert client.post(f"/quizzes/{quiz.id}/questions/", json=question_data()).status_code == 401
+    res = client.post(f"/quizzes/{quiz.id}/questions/", json=question_data(), headers=auth_header(professor))
+    assert res.status_code in (404, 405)
 
 
 # --- PUT /quizzes/{id} ---

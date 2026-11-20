@@ -6,6 +6,9 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 # Plenty for a projector; keeps a typical stored image to a few hundred KB
 MAX_SIDE = 1600
+# A small, highly compressible file can decode to gigabytes; check the size before decoding.
+# 40 megapixels is above any phone camera.
+MAX_PIXELS = 40_000_000
 ALLOWED_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png"}
 
 
@@ -15,13 +18,18 @@ def clean_image(raw: bytes) -> tuple[bytes, str, int, int]:
     The format is read from the file's contents, not its name. The image is re-saved, which
     drops EXIF data such as a phone photo's GPS location, and shrunk to fit MAX_SIDE.
     """
+    formats = list(ALLOWED_FORMATS)
     try:
-        with Image.open(BytesIO(raw)) as probe:
+        with Image.open(BytesIO(raw), formats=formats) as probe:
             fmt = probe.format
+            width, height = probe.size
             probe.verify()
-        if fmt not in ALLOWED_FORMATS:
-            raise ValueError
-        img = Image.open(BytesIO(raw))
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError, ValueError):
+        raise ValueError("Only JPG and PNG images are allowed.")
+    if width * height > MAX_PIXELS:
+        raise ValueError("That image is too large. Use one under 40 megapixels.")
+    try:
+        img = Image.open(BytesIO(raw), formats=formats)
         img.load()
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError, ValueError):
         raise ValueError("Only JPG and PNG images are allowed.")

@@ -36,6 +36,8 @@ def reset_state():
     models.Base.metadata.drop_all(bind=test_engine)
     models.Base.metadata.create_all(bind=test_engine)
     manager.active_rooms.clear()
+    main.sign_in_attempts.clear()
+    main.failed_logins.clear()
     yield
     manager.active_rooms.clear()
 
