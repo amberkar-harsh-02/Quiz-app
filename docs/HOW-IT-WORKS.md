@@ -60,7 +60,7 @@ flowchart LR
 - Passwords need at least 8 characters. The sign-up form asks for the password twice.
 - Signing in returns a JWT that expires after 24 hours. It carries the email and `is_professor` / `is_admin` flags. The frontend keeps it in `localStorage` and sends it as a `Bearer` header.
 - Host access comes only from the staff list (`staff_emails` table) or `ADMIN_EMAILS`. There is no "I am a professor" option at sign-up.
-- Staff and admin rights need `User.email_verified`, which Google sign-in sets (it requires Google's `email_verified` claim). A password sign-up can't prove someone owns the address, so it never grants these rights. When a password account first signs in with Google, its password is replaced, so whoever set it loses access. `GOOGLE_CLIENT_ID` must be set: without it, `/google-login` returns 503, because Google's library would skip the audience check and accept tokens issued to other sites. `verify_email.py` lets an operator mark an address verified by hand (local testing).
+- Staff and admin rights need `User.email_verified`. Google sign-in sets it (it requires Google's `email_verified` claim), or the server operator sets it with `verify_email.py` for an address that isn't a Google account: shell access to the server is the proof there. A password sign-up can't prove someone owns the address, so it never grants these rights. When a password account first signs in with Google, its password is replaced, so whoever set it loses access. `GOOGLE_CLIENT_ID` must be set: without it, `/google-login` returns 503, because Google's library would skip the audience check and accept tokens issued to other sites.
 - An admin can add an email before that person has an account; it applies when they sign in with Google. Adding or removing someone who already has an account takes effect immediately. Every professor-only request checks `User.is_professor` in the database rather than the flag in the token, and the frontend reads the current role from `GET /me`.
 - On startup the server copies existing professors and any emails in the old `PROFESSOR_EMAILS` setting onto the staff list, so upgrading doesn't take anyone's access away.
 - The host WebSocket checks the token and that the professor **owns** the quiz before it opens.
@@ -400,7 +400,7 @@ erDiagram
 ```
 main.py                  FastAPI app: auth, REST endpoints, both WebSocket endpoints, scoring
 images.py                Checks, shrinks and strips metadata from uploaded question images
-verify_email.py          Operator tool: marks an account's email verified (local testing without Google)
+verify_email.py          Operator tool: verifies accounts, creates them, resets passwords (for addresses without Google)
 pdfs.py                  Student review and class report PDFs (fpdf2, with the bundled font in fonts/)
 game_manager.py          In-memory rooms: create, join, reconnect, online count, broadcast
 models.py                SQLAlchemy tables

@@ -23,7 +23,7 @@ export default function StudentDashboard({ email, staffNeedsGoogle, history, his
 
         {staffNeedsGoogle && (
           <p className="mb-6 rounded-control border border-line bg-white px-4 py-3 text-muted">
-            Your email is on the staff list. To host games, log out and use <strong className="text-ink">Sign in with Google</strong>; that proves the address is yours.
+            Your email is on the staff list. To host games, log out and use <strong className="text-ink">Sign in with Google</strong>; that proves the address is yours. If this address isn&apos;t a Google account, ask whoever runs the server to verify it.
           </p>
         )}
 

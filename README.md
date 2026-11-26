@@ -73,13 +73,19 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 1. **Sign in as the professor.** On the start page, open **Sign in** and use **Sign in with Google** with an email listed in `ADMIN_EMAILS`. You land on **My Quizzes**.
 
-   Staff and admin access only works on an account that has signed in with Google at least once. That proves the email belongs to the person; a password sign-up alone doesn't, so anyone could otherwise sign up with a listed email before its owner does. Students can still use a password. If a password account later signs in with Google, it becomes Google-only and the old password stops working.
+   Staff and admin access only works on a **verified** account. That proves the email belongs to the person; a password sign-up alone doesn't, so anyone could otherwise sign up with a listed email before its owner does. An account is verified in one of two ways:
+   - **Signing in with Google** once. If it was a password account, it becomes Google-only and the old password stops working.
+   - **The server operator vouches for it** with `verify_email.py`, for an address that isn't a Google account (or for local testing). It keeps signing in with its password.
 
-   **Testing locally without Google:** sign up with a password, then mark the account as verified from the project folder (where `kahoot.db` is):
+   Students can still sign up with a password.
+
+   **Admin or staff accounts that aren't Google accounts.** Run these from the folder that holds `kahoot.db` (on the server: `cd ~/quiz-app` and use `venv/bin/python`):
    ```bash
-   python verify_email.py you@csumb.edu
+   python verify_email.py legend@csumb.edu dnegel@csumb.edu   # verify existing password accounts
+   python verify_email.py --create you@csumb.edu              # create a verified account; asks for a password
+   python verify_email.py --password you@csumb.edu            # set a new password if it's forgotten
    ```
-   Only do this for an address you know is the person's own.
+   Being verified gives no rights by itself: the email must also be in `ADMIN_EMAILS` or on the Staff list, and the tool tells you which. Only vouch for addresses you know belong to the person using them.
 
    To give other professors or TAs access, open **Staff** in the top bar, type their `@csumb.edu` email and click **Add**. They don't need an account yet. They can host once they sign in with Google, or straight away if they already have. **Remove** takes access away again; their quizzes are kept.
 2. **Add a quiz.** Click **+ Create Quiz** to build one, or **Upload JSON** to import a file (format below).
@@ -213,6 +219,6 @@ The server's `.env` needs `ADMIN_EMAILS` (the deploy never changes `.env`). On f
 
 | Problem | Fix |
 | --- | --- |
-| Signing in opens the student dashboard instead of **My Quizzes** | If the dashboard says your email is on the staff list, log out and use **Sign in with Google**. Otherwise your email isn't on the staff list. Ask an admin to add it on the **Staff** page, then refresh. If you're meant to be an admin, check `ADMIN_EMAILS` in `.env` and restart `uvicorn` (`--reload` doesn't watch `.env`). |
+| Signing in opens the student dashboard instead of **My Quizzes** | If the dashboard says your email is on the staff list, log out and use **Sign in with Google**, or, for an address that isn't a Google account, have the server operator run `venv/bin/python verify_email.py you@csumb.edu` in `~/quiz-app`. Otherwise your email isn't on the staff list. Ask an admin to add it on the **Staff** page, then refresh. If you're meant to be an admin, check `ADMIN_EMAILS` in `.env` and restart `uvicorn` (`--reload` doesn't watch `.env`). |
 | "Could not reach the game server" | The backend isn't running on port 8000. Start `uvicorn`, or set `VITE_API_URL` in `frontend/.env.local` if it runs elsewhere. |
 | Need a clean start | Stop the server and delete `kahoot.db`, `kahoot.db-wal` and `kahoot.db-shm`. |
